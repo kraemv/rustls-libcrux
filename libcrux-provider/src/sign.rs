@@ -291,21 +291,12 @@ impl Signer for LibcruxSigningKey {
                 key_size,
                 hash_algo,
             } => {
-                let mut salt = [0u8; 32];
-                rand_core::OsRng.try_fill_bytes(&mut salt).unwrap();
-                let pub_key =
-                    signature::rsa_pss::RsaPssPublicKey::new(*key_size, n).map_err(|_| {
-                        rustls::Error::General(String::from("error building public key"))
-                    })?;
-                let priv_key =
-                    signature::rsa_pss::RsaPssPrivateKey::new(&pub_key, d).map_err(|_| {
-                        rustls::Error::General(String::from("error building private key"))
-                    })?;
-                let sig = priv_key
-                    .sign(*hash_algo, &salt, message)
-                    .map_err(|_| rustls::Error::General(String::from("error signing")))?;
+                let alg = signature::Algorithm::RsaPss(*hash_algo, 0x20);
+                let private_key = [n.as_slice(), d.as_slice()].concat();
+                let sig = signature::sign(alg, message, private_key.as_slice(), &mut rand_core::OsRng.unwrap_mut())
+                    .map_err(|_| rustls::Error::General(String::from("signing error")))?;
 
-                Ok(sig.as_bytes().to_vec())
+                Ok(sig.into_vec())
             }
 
             LibcruxSigningKey::Ecdsa(private_key, scheme) => {

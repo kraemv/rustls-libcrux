@@ -1,12 +1,12 @@
 use der::Reader;
 use libcrux::signature::{
-    rsa_pss::{RsaPssPublicKey, RsaPssSignature},
-    verify, DigestAlgorithm, EcDsaP256Signature, Ed25519Signature, Signature,
+    verify, DigestAlgorithm, EcDsaP256Signature, Ed25519Signature, rsa_pss::{RsaPssPublicKey, RsaPssSignature}, Signature,
 };
 use rustls::crypto::WebPkiSupportedAlgorithms;
 use rustls::pki_types::{alg_id, AlgorithmIdentifier, InvalidSignature, SignatureVerificationAlgorithm};
 use rustls::SignatureScheme;
 use webpki::{aws_lc_rs::RSA_PKCS1_2048_8192_SHA256 as AWS_LC_RSA_PKCS1_SHA256};
+use crate::std::vec::Vec;
 
 pub static ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     all: &[
@@ -137,16 +137,15 @@ impl SignatureVerificationAlgorithm for RsaPssVerify {
         signature: &[u8],
     ) -> Result<(), InvalidSignature> {
         let Self(digest_algo, salt_len) = *self;
-        let public_key = decode_spki_spk(public_key)?;
-        let signature = RsaPssSignature::from(signature);
-
-        public_key
-            .verify(digest_algo, &signature, message, salt_len)
-            .map_err(|_| InvalidSignature)
+        let (key_size, n) = decode_spki_spk(public_key)?;
+        let public_key = RsaPssPublicKey::new(key_size, n, digest_algo).map_err(|_| InvalidSignature)?;
+        let public_key_vec: Vec<u8> = (&public_key).into();
+        let signature = Signature::RsaPss(RsaPssSignature::from(signature), salt_len);
+        verify(message, &signature, public_key_vec.as_slice()).map_err(|_| InvalidSignature)
     }
 }
 
-fn decode_spki_spk(spki_spk: &[u8]) -> Result<RsaPssPublicKey, InvalidSignature> {
+fn decode_spki_spk(spki_spk: &[u8]) -> Result<(libcrux::signature::rsa_pss::RsaPssKeySize, &[u8]), InvalidSignature> {
     // public_key: unfortunately this is not a whole SPKI, but just the key material.
     // decode the two integers manually.
     let mut reader = der::SliceReader::new(spki_spk).map_err(|_| InvalidSignature)?;
@@ -161,7 +160,7 @@ fn decode_spki_spk(spki_spk: &[u8]) -> Result<RsaPssPublicKey, InvalidSignature>
         // it's actually a NotSupportedError, but it amounts to the same
         return Err(InvalidSignature);
     }
-
+    
     let key_size = match n.len() {
         256 => libcrux::signature::rsa_pss::RsaPssKeySize::N2048,
         384 => libcrux::signature::rsa_pss::RsaPssKeySize::N3072,
@@ -171,7 +170,7 @@ fn decode_spki_spk(spki_spk: &[u8]) -> Result<RsaPssPublicKey, InvalidSignature>
         _ => return Err(InvalidSignature),
     };
 
-    libcrux::signature::rsa_pss::RsaPssPublicKey::new(key_size, n).map_err(|_| InvalidSignature)
+    Ok((key_size, n))
 }
 
 struct DerEcdsaSignature {
