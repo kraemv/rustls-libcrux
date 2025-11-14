@@ -31,44 +31,6 @@ pub enum EcdsaSignatureScheme {
     ECDSA_NISTP256_SHA256,
 }
 
-struct KeyStoreEntry {
-    id: u32,
-    key: LibcruxSigningKey,
-}
-
-struct SigningKeyStore {
-    keys: Vec<KeyStoreEntry>,
-    next_id: u32,
-}
-
-impl SigningKeyStore {
-    pub fn new() -> Self{
-        SigningKeyStore{keys: Vec::new(), next_id: 0}
-    }
-    
-    fn sign_for_id(&self, id: u32, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
-        let key = self.keys
-                    .iter()
-                    .find(|key| key.id == id)
-                    .map(|key| &key.key)
-                    .ok_or(InconsistentKeys::KeyMismatch)?;
-        key.sign(message)
-    }
-    
-    fn add_key(&mut self, key: LibcruxSigningKey) {
-        self.keys.push(KeyStoreEntry{id: self.next_id, key: key});
-        self.next_id += 1;
-    }
-}
-
-static KEY_STORE: LazyLock<SigningKeyStore> = LazyLock::new(|| SigningKeyStore::new());
-
-#[derive(Clone, Debug)]
-pub struct LibcruxKeyId {
-    id: u32,
-    scheme: SignatureScheme,
-}
-
 /*impl TryFrom<PrivateKeyDer<'_>> LibcruxKeyId {
     fn try_from(value: PrivateKeyDer<'_>) -> Result<Self, Self::Error> {
     
