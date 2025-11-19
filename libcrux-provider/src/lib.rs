@@ -47,7 +47,7 @@ impl rustls::crypto::KeyProvider for Provider {
         key_der: PrivateKeyDer<'static>,
     ) -> Result<Arc<dyn rustls::sign::SigningKey>, rustls::Error> {
         Ok(Arc::new(
-            sign::LibcruxSigningKey::try_from(key_der).map_err(|err| {
+            sign::LibcruxKeyId::try_from(key_der).map_err(|err| {
                 #[cfg(feature = "std")]
                 let err = rustls::OtherError(Arc::new(err));
                 #[cfg(not(feature = "std"))]

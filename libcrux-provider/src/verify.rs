@@ -1,6 +1,6 @@
 use der::Reader;
 use libcrux::signature::{
-    verify, DigestAlgorithm, EcDsaP256Signature, Ed25519Signature, rsa_pss::{RsaPssPublicKey, RsaPssSignature}, Signature,
+    DigestAlgorithm, EcDsaP256Info, EcDsaP256PubKey, EcDsaP256Signature, Ed25519Signature, Ed25519PublicKey, RsaPssPubKey, RsaPssKeyInfo, RsaPssSigInfo, RsaPssSignature, RsaPublicKey, Signature, VerificationKey,
 };
 use rustls::crypto::WebPkiSupportedAlgorithms;
 use rustls::pki_types::{alg_id, AlgorithmIdentifier, InvalidSignature, SignatureVerificationAlgorithm};
@@ -68,12 +68,15 @@ impl SignatureVerificationAlgorithm for EcdsaP256Verify {
             .as_bytes()
             .try_into()
             .map_err(|_| InvalidSignature)?;
-        let signature = Signature::EcDsaP256(EcDsaP256Signature::from_raw(
-            r,
-            s,
-            libcrux::signature::Algorithm::EcDsaP256(self.0),
-        ));
-        verify(message, &signature, public_key).map_err(|_| InvalidSignature)
+        let signature = Signature::EcDsaP256(
+            EcDsaP256Signature::from_raw(
+                r,
+                s,
+            ),
+            EcDsaP256Info::new(self.0)
+        );
+        let pk = EcDsaP256PubKey::new(public_key.try_into().map_err(|_| InvalidSignature)?, EcDsaP256Info::new(self.0));
+        pk.verify(message, signature).map_err(|_| InvalidSignature)
     }
 
     fn public_key_alg_id(&self) -> AlgorithmIdentifier {
@@ -82,6 +85,7 @@ impl SignatureVerificationAlgorithm for EcdsaP256Verify {
 
     fn signature_alg_id(&self) -> AlgorithmIdentifier {
         match self.0 {
+            DigestAlgorithm::Sha224 => todo!(),
             DigestAlgorithm::Sha256 => alg_id::ECDSA_SHA256,
             DigestAlgorithm::Sha384 => alg_id::ECDSA_SHA384,
             DigestAlgorithm::Sha512 => alg_id::ECDSA_SHA512,
@@ -102,7 +106,8 @@ impl SignatureVerificationAlgorithm for Ed25519Verify {
         let signature = Signature::Ed25519(
             Ed25519Signature::from_slice(signature).map_err(|_| InvalidSignature)?,
         );
-        verify(message, &signature, public_key).map_err(|_| InvalidSignature)
+        let pk = Ed25519PublicKey::from_bytes(public_key.try_into().map_err(|_| InvalidSignature)?);
+        pk.verify(message, signature).map_err(|_| InvalidSignature)
     }
 
     fn public_key_alg_id(&self) -> AlgorithmIdentifier {
@@ -124,9 +129,10 @@ impl SignatureVerificationAlgorithm for RsaPssVerify {
 
     fn signature_alg_id(&self) -> AlgorithmIdentifier {
         match self.0 {
-            libcrux::signature::DigestAlgorithm::Sha256 => alg_id::RSA_PSS_SHA256,
-            libcrux::signature::DigestAlgorithm::Sha384 => alg_id::RSA_PSS_SHA384,
-            libcrux::signature::DigestAlgorithm::Sha512 => alg_id::RSA_PSS_SHA512,
+            DigestAlgorithm::Sha224 => todo!(),
+            DigestAlgorithm::Sha256 => alg_id::RSA_PSS_SHA256,
+            DigestAlgorithm::Sha384 => alg_id::RSA_PSS_SHA384,
+            DigestAlgorithm::Sha512 => alg_id::RSA_PSS_SHA512,
         }
     }
 
@@ -137,15 +143,21 @@ impl SignatureVerificationAlgorithm for RsaPssVerify {
         signature: &[u8],
     ) -> Result<(), InvalidSignature> {
         let Self(digest_algo, salt_len) = *self;
-        let (key_size, n) = decode_spki_spk(public_key)?;
-        let public_key = RsaPssPublicKey::new(key_size, n, digest_algo).map_err(|_| InvalidSignature)?;
-        let public_key_vec: Vec<u8> = (&public_key).into();
-        let signature = Signature::RsaPss(RsaPssSignature::from(signature), salt_len);
-        verify(message, &signature, public_key_vec.as_slice()).map_err(|_| InvalidSignature)
+        let n = decode_spki_spk(public_key)?;
+        
+        let key_info = RsaPssKeyInfo::new(digest_algo);
+        let public_key = RsaPublicKey::try_from(n).map_err(|_| InvalidSignature)?;
+        
+        let pk = RsaPssPubKey::new(public_key, key_info);
+        
+        let sig_info = RsaPssSigInfo::new(digest_algo, salt_len);
+        let signature = Signature::RsaPss(RsaPssSignature::from_slice(signature), sig_info);
+        
+        pk.verify(message, signature).map_err(|_| InvalidSignature)
     }
 }
 
-fn decode_spki_spk(spki_spk: &[u8]) -> Result<(libcrux::signature::rsa_pss::RsaPssKeySize, &[u8]), InvalidSignature> {
+fn decode_spki_spk(spki_spk: &[u8]) -> Result<&[u8], InvalidSignature> {
     // public_key: unfortunately this is not a whole SPKI, but just the key material.
     // decode the two integers manually.
     let mut reader = der::SliceReader::new(spki_spk).map_err(|_| InvalidSignature)?;
@@ -160,17 +172,8 @@ fn decode_spki_spk(spki_spk: &[u8]) -> Result<(libcrux::signature::rsa_pss::RsaP
         // it's actually a NotSupportedError, but it amounts to the same
         return Err(InvalidSignature);
     }
-    
-    let key_size = match n.len() {
-        256 => libcrux::signature::rsa_pss::RsaPssKeySize::N2048,
-        384 => libcrux::signature::rsa_pss::RsaPssKeySize::N3072,
-        512 => libcrux::signature::rsa_pss::RsaPssKeySize::N4096,
-        768 => libcrux::signature::rsa_pss::RsaPssKeySize::N6144,
-        1024 => libcrux::signature::rsa_pss::RsaPssKeySize::N8192,
-        _ => return Err(InvalidSignature),
-    };
 
-    Ok((key_size, n))
+    Ok(n)
 }
 
 struct DerEcdsaSignature {
