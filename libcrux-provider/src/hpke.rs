@@ -174,8 +174,9 @@ impl Hpke for HpkeRs {
             }
         };
 
-        let (public_key, secret_key) = HpkeRustCrypto::kem_key_gen(kem_algorithm, &mut HpkeRustCrypto::prng())
-            .map_err(other_err)?;
+        let (public_key, secret_key) =
+            HpkeRustCrypto::kem_key_gen(kem_algorithm, &mut HpkeRustCrypto::prng())
+                .map_err(other_err)?;
 
         Ok((HpkePublicKey(public_key), HpkePrivateKey::from(secret_key)))
     }
@@ -192,9 +193,7 @@ struct HpkeRsSender {
 
 impl HpkeSealer for HpkeRsSender {
     fn seal(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, Error> {
-        self.context
-            .seal(aad, plaintext)
-            .map_err(other_err)
+        self.context.seal(aad, plaintext).map_err(other_err)
     }
 }
 
@@ -205,9 +204,7 @@ struct HpkeRsReceiver {
 
 impl HpkeOpener for HpkeRsReceiver {
     fn open(&mut self, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
-        self.context
-            .open(aad, ciphertext)
-            .map_err(other_err)
+        self.context.open(aad, ciphertext).map_err(other_err)
     }
 }
 
@@ -432,9 +429,7 @@ mod tests {
             let ct = sealer.seal(aad, pt).unwrap();
 
             // We should be able to set up an opener.
-            let mut opener = suite
-                .setup_opener(&enc, info, &sk)
-                .unwrap();
+            let mut opener = suite.setup_opener(&enc, info, &sk).unwrap();
             _ = format!("{opener:?}"); // Opener should be Debug.
 
             // Setting up an opener with an invalid private key should fail.
@@ -463,8 +458,6 @@ mod tests {
     #[test]
     fn test_fips() {
         // None of the rust-crypto backed hpke-rs suites should be considered FIPS approved.
-        assert!(ALL_SUPPORTED_SUITES
-            .iter()
-            .all(|suite| !suite.fips()));
+        assert!(ALL_SUPPORTED_SUITES.iter().all(|suite| !suite.fips()));
     }
 }

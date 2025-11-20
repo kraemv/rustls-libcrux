@@ -9,12 +9,16 @@ use rand_core::TryRngCore;
 use sec1::EcPrivateKey;
 use rustls::pki_types::PrivateKeyDer;
 use rustls::sign::{Signer, SigningKey};
-use rustls::{InconsistentKeys, SignatureAlgorithm, SignatureScheme};
+use rustls::{SignatureAlgorithm, SignatureScheme};
 
 use der::{asn1::UintRef, Encode};
 
-use libcrux::{add_entry, KeyStoreEntry, SecretKey, sign_for_id};
-use libcrux::signature::{DigestAlgorithm, EcDsaP256Info, EcDsaP256PrivKey, EcDsaP256PrivateKey, EcDsaP256Signature, RsaPssKeyInfo, RsaPssPrivKey, RsaPrivateKey, RsaPssSigInfo, SigInfo, Signature, SigningKeyType};
+use libcrux::signature::{
+    DigestAlgorithm, EcDsaP256Info, EcDsaP256PrivKey, EcDsaP256PrivateKey, EcDsaP256Signature,
+    RsaPrivateKey, RsaPssKeyInfo, RsaPssPrivKey, RsaPssSigInfo, SigInfo, Signature, SigningKeyType,
+};
+use libcrux::{add_entry, sign_for_id, KeyStoreEntry, SecretKey};
+use libcrux_sha2::sha256;
 
 #[derive(Clone, Debug, Copy)]
 pub enum EcdsaSignatureScheme {
@@ -25,16 +29,15 @@ pub enum EcdsaSignatureScheme {
 
 impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
     type Error = pkcs8::Error;
-    
+
     fn try_from(value: PrivateKeyDer<'_>) -> Result<Self, Self::Error> {
         todo!()
     }
 }
 
-
 #[derive(Clone, Debug)]
 pub struct LibcruxKeyId {
-    id: u32,
+    id: u128,
     scheme: SignatureScheme,
 }
 
@@ -46,7 +49,7 @@ impl SigningKey for LibcruxKeyId {
             None
         }
     }
-    
+
     // copied from rustls, where it wasn't public
     fn algorithm(&self) -> SignatureAlgorithm {
         match self.scheme {
@@ -77,60 +80,76 @@ impl Signer for LibcruxKeyId {
         match self.scheme {
             SignatureScheme::RSA_PSS_SHA256 => {
                 let info = SigInfo::RsaPss(RsaPssSigInfo::new(DigestAlgorithm::Sha256, 0x20));
-                sign_for_id(self.id, message, Some(info), &mut rand_core::OsRng.unwrap_mut())
-                    .map(|sig| sig.into_vec()).map_err(into_signing_error)
+                sign_for_id(
+                    self.id,
+                    message,
+                    Some(info),
+                    &mut rand_core::OsRng.unwrap_mut(),
+                )
+                .map(|sig| sig.into_vec())
+                .map_err(into_signing_error)
             }
             SignatureScheme::RSA_PSS_SHA384 => {
                 let info = SigInfo::RsaPss(RsaPssSigInfo::new(DigestAlgorithm::Sha384, 0x20));
-                sign_for_id(self.id, message, Some(info), &mut rand_core::OsRng.unwrap_mut())
-                    .map(|sig| sig.into_vec()).map_err(into_signing_error)
+                sign_for_id(
+                    self.id,
+                    message,
+                    Some(info),
+                    &mut rand_core::OsRng.unwrap_mut(),
+                )
+                .map(|sig| sig.into_vec())
+                .map_err(into_signing_error)
             }
             SignatureScheme::RSA_PSS_SHA512 => {
                 let info = SigInfo::RsaPss(RsaPssSigInfo::new(DigestAlgorithm::Sha512, 0x20));
-                sign_for_id(self.id, message, Some(info), &mut rand_core::OsRng.unwrap_mut())
-                    .map(|sig| sig.into_vec()).map_err(into_signing_error)
+                sign_for_id(
+                    self.id,
+                    message,
+                    Some(info),
+                    &mut rand_core::OsRng.unwrap_mut(),
+                )
+                .map(|sig| sig.into_vec())
+                .map_err(into_signing_error)
             }
             SignatureScheme::ECDSA_NISTP256_SHA256 => {
                 let info = SigInfo::EcDsaP256(EcDsaP256Info::new(DigestAlgorithm::Sha256));
-                let sig = sign_for_id(self.id, message, Some(info), &mut rand_core::OsRng.unwrap_mut());
+                let sig = sign_for_id(
+                    self.id,
+                    message,
+                    Some(info),
+                    &mut rand_core::OsRng.unwrap_mut(),
+                );
                 match sig {
-                    Ok(Signature::EcDsaP256(val, _) )=> {
+                    Ok(Signature::EcDsaP256(val, _)) => {
                         der_encode_ecdsa_signature(&val).map_err(|_| {
-                            rustls::Error::General(String::from("error der encoding ecdsa signature"))
+                            rustls::Error::General(String::from(
+                                "error der encoding ecdsa signature",
+                            ))
                         })
                     }
                     Err(_) => Err(rustls::Error::General(String::from("Signing failed"))),
-                    _ => Err(rustls::Error::General(String::from("error der encoding ecdsa signature")))
+                    _ => Err(rustls::Error::General(String::from(
+                        "error der encoding ecdsa signature",
+                    ))),
                 }
             }
             SignatureScheme::ED25519 => {
                 sign_for_id(self.id, message, None, &mut rand_core::OsRng.unwrap_mut())
-                    .map(|sig| sig.into_vec()).map_err(into_signing_error)
+                    .map(|sig| sig.into_vec())
+                    .map_err(into_signing_error)
             }
-            _ => Err(rustls::Error::General(String::from("Unsupported scheme")))
+            _ => Err(rustls::Error::General(String::from("Unsupported scheme"))),
         }
     }
 
     fn scheme(&self) -> SignatureScheme {
         self.scheme
     }
-} 
-
-#[derive(Clone, Debug)]
-pub enum LibcruxSigningKey {
-    RsaPss {
-        n: Vec<u8>,
-        d: Vec<u8>,
-        hash_algo: DigestAlgorithm,
-    },
-    Ecdsa(Vec<u8>, EcdsaSignatureScheme),
-    Ed25519([u8; 32]),
 }
 
-impl LibcruxSigningKey {
-    pub fn new_ed25519(sk: [u8; 32]) -> Self {
-        Self::Ed25519(sk)
-    }
+fn compute_id(der: pki_types::PrivatePkcs8KeyDer) -> u128 {
+    let id: [u8; 16] = sha256(der.secret_pkcs8_der())[..16].try_into().unwrap();
+    u128::from_le_bytes(id)
 }
 
 impl TryFrom<PrivateKeyDer<'_>> for LibcruxSigningKey {
@@ -175,8 +194,7 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxSigningKey {
                         Ok(Self::Ecdsa(key, scheme))
                     }
 
-                    let parameter_oid =
-                        ObjectIdentifier::from_bytes(parameter.value()).unwrap();
+                    let parameter_oid = ObjectIdentifier::from_bytes(parameter.value()).unwrap();
                     let parameter_oid_arcs: Vec<OidArc> = parameter_oid.arcs().collect();
 
                     let scheme = match parameter_oid_arcs.as_slice() {
@@ -188,14 +206,19 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxSigningKey {
 
                     let key = private_key_info.private_key;
 
-                    let entry = KeyStoreEntry::new(42,
-                        SecretKey::SigningKey(SigningKeyType::EcDsaP256(
-                                EcDsaP256PrivKey::new(
-                                    EcDsaP256PrivateKey::try_from(key).map_err(|_| pkcs8::Error::KeyMalformed)?,
-                                    EcDsaP256Info::new(DigestAlgorithm::Sha256),
-                                )
+                    let signing_key = match scheme {
+                        EcdsaSignatureScheme::ECDSA_NISTP256_SHA256 => {
+                            let key = EcDsaP256PrivateKey::try_from(key)
+                                .map_err(|_| pkcs8::Error::KeyMalformed)?;
+                            SigningKeyType::EcDsaP256(EcDsaP256PrivKey::new(
+                                key,
+                                EcDsaP256Info::new(DigestAlgorithm::Sha256),
                             ))
-                    );
+                        }
+                    };
+
+                    
+                    let entry = KeyStoreEntry::new(compute_id(der), SecretKey::SigningKey(signing_key));
                     add_entry(entry);
                     Ok(())
                 }
@@ -213,14 +236,14 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxSigningKey {
 
                     let d = rsa_priv_key.private_exponent.as_bytes();
                     let d = trim_leading_zeroes(d).to_vec();
-
-                    let entry = KeyStoreEntry::new(42, // Choose the id with a hash
-                        SecretKey::SigningKey(SigningKeyType::RsaPss(
-                            RsaPssPrivKey::new(
-                                RsaPrivateKey::from_components(&n, &d).map_err(|_| pkcs8::Error::KeyMalformed)?,
-                                RsaPssKeyInfo::new(DigestAlgorithm::Sha256),
-                            )
-                        ))
+                    
+                    let entry = KeyStoreEntry::new(
+                        compute_id(der),
+                        SecretKey::SigningKey(SigningKeyType::RsaPss(RsaPssPrivKey::new(
+                            RsaPrivateKey::from_components(&n, &d)
+                                .map_err(|_| pkcs8::Error::KeyMalformed)?,
+                            RsaPssKeyInfo::new(DigestAlgorithm::Sha256),
+                        ))),
                     );
                     add_entry(entry);
                     Ok(())

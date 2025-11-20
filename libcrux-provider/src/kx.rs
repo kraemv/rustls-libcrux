@@ -4,8 +4,8 @@ use alloc::vec::Vec;
 
 use libcrux::ecdh;
 
-use rustls::crypto::{self, SupportedKxGroup as _};
 use rand_core::TryRngCore;
+use rustls::crypto::{self, SupportedKxGroup as _};
 
 use crate::pq::X25519MlKem768;
 
@@ -44,8 +44,9 @@ pub struct X25519;
 
 impl crypto::SupportedKxGroup for X25519 {
     fn start(&self) -> Result<Box<dyn crypto::ActiveKeyExchange>, rustls::Error> {
-        let (priv_key, pub_key) = ecdh::key_gen(ecdh::Algorithm::X25519, &mut rand_core::OsRng.unwrap_mut())
-            .map_err(|_| rustls::Error::General(String::from("ecdh keygen error")))?;
+        let (priv_key, pub_key) =
+            ecdh::key_gen(ecdh::Algorithm::X25519, &mut rand_core::OsRng.unwrap_mut())
+                .map_err(|_| rustls::Error::General(String::from("ecdh keygen error")))?;
 
         Ok(Box::new(KeyExchange { pub_key, priv_key }))
     }

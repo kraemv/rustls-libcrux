@@ -135,8 +135,7 @@ impl MessageDecrypter for Tls13Cipher {
         libcrux::aead::decrypt(&self.0, payload, iv, &aad, &tag)
             .map_err(|_| rustls::Error::DecryptError)?;
 
-        m.payload
-            .truncate(m.payload.len() - TAG_LEN);
+        m.payload.truncate(m.payload.len() - TAG_LEN);
 
         m.into_tls13_unpadded_message()
     }
@@ -195,8 +194,7 @@ impl MessageDecrypter for Tls12Cipher {
         libcrux::aead::decrypt(&self.0, payload.as_mut(), iv, &aad, &tag)
             .map_err(|_| rustls::Error::DecryptError)?;
 
-        m.payload
-            .truncate(m.payload.len() - TAG_LEN);
+        m.payload.truncate(m.payload.len() - TAG_LEN);
 
         Ok(m.into_plain_message())
     }

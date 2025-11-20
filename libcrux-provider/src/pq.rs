@@ -84,8 +84,7 @@ impl ActiveKeyExchange for Active {
         };
 
         let combined = CombinedSecret::combine(
-            self.x25519
-                .complete(ciphertext.x25519)?,
+            self.x25519.complete(ciphertext.x25519)?,
             mlkem768::decapsulate(
                 self.key_pair.private_key(),
                 &ciphertext
