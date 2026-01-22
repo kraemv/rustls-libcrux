@@ -1,8 +1,7 @@
 use der::Reader;
 use libcrux::signature::{
-    DigestAlgorithm, EcDsaP256Info, EcDsaP256PubKey, EcDsaP256Signature, Ed25519PublicKey,
-    Ed25519Signature, RsaPssKeyInfo, RsaPssPubKey, RsaPssSigInfo, RsaPssSignature, RsaPublicKey,
-    Signature, VerificationKey,
+    DigestAlgorithm, EcDsaP256PubKey, EcDsaP256Signature, Ed25519PublicKey,
+    Ed25519Signature, Signature, VerificationKey,
 };
 use rustls::crypto::WebPkiSupportedAlgorithms;
 use rustls::pki_types::{alg_id, AlgorithmIdentifier, InvalidSignature, SignatureVerificationAlgorithm};
@@ -12,17 +11,11 @@ use crate::std::vec::Vec;
 
 pub static ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     all: &[
-        RSA_PSS_SHA256,
-        RSA_PSS_SHA384,
-        RSA_PSS_SHA512,
         ED25519,
         ECDSA_P256_SHA256,
         AWS_LC_RSA_PKCS1_SHA256,
     ],
     mapping: &[
-        (SignatureScheme::RSA_PSS_SHA256, &[RSA_PSS_SHA256]),
-        (SignatureScheme::RSA_PSS_SHA384, &[RSA_PSS_SHA384]),
-        (SignatureScheme::RSA_PSS_SHA512, &[RSA_PSS_SHA512]),
         (SignatureScheme::ED25519, &[ED25519]),
         (SignatureScheme::ECDSA_NISTP256_SHA256, &[ECDSA_P256_SHA256]),
         (
@@ -31,15 +24,6 @@ pub static ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
         ),
     ],
 };
-
-static RSA_PSS_SHA256: &dyn SignatureVerificationAlgorithm =
-    &RsaPssVerify(DigestAlgorithm::Sha256, 0x20);
-
-static RSA_PSS_SHA384: &dyn SignatureVerificationAlgorithm =
-    &RsaPssVerify(DigestAlgorithm::Sha384, 0x20);
-
-static RSA_PSS_SHA512: &dyn SignatureVerificationAlgorithm =
-    &RsaPssVerify(DigestAlgorithm::Sha512, 0x20);
 
 static ED25519: &dyn SignatureVerificationAlgorithm = &Ed25519Verify;
 
@@ -62,11 +46,11 @@ impl SignatureVerificationAlgorithm for EcdsaP256Verify {
         let s: [u8; 32] = sig.s.as_bytes().try_into().map_err(|_| InvalidSignature)?;
         let signature = Signature::EcDsaP256(
             EcDsaP256Signature::from_raw(r, s),
-            EcDsaP256Info::new(self.0),
+            self.0,
         );
         let pk = EcDsaP256PubKey::new(
             public_key.try_into().map_err(|_| InvalidSignature)?,
-            EcDsaP256Info::new(self.0),
+            self.0,
         );
         pk.verify(message, signature).map_err(|_| InvalidSignature)
     }
@@ -109,61 +93,6 @@ impl SignatureVerificationAlgorithm for Ed25519Verify {
     fn signature_alg_id(&self) -> AlgorithmIdentifier {
         alg_id::ED25519
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct RsaPssVerify(DigestAlgorithm, usize);
-
-impl SignatureVerificationAlgorithm for RsaPssVerify {
-    fn public_key_alg_id(&self) -> AlgorithmIdentifier {
-        alg_id::RSA_ENCRYPTION
-    }
-
-    fn signature_alg_id(&self) -> AlgorithmIdentifier {
-        match self.0 {
-            DigestAlgorithm::Sha224 => todo!(),
-            DigestAlgorithm::Sha256 => alg_id::RSA_PSS_SHA256,
-            DigestAlgorithm::Sha384 => alg_id::RSA_PSS_SHA384,
-            DigestAlgorithm::Sha512 => alg_id::RSA_PSS_SHA512,
-        }
-    }
-
-    fn verify_signature(
-        &self,
-        public_key: &[u8],
-        message: &[u8],
-        signature: &[u8],
-    ) -> Result<(), InvalidSignature> {
-        let Self(digest_algo, salt_len) = *self;
-        let n = decode_spki_spk(public_key)?;
-
-        let key_info = RsaPssKeyInfo::new(digest_algo);
-        let public_key = RsaPublicKey::try_from(n).map_err(|_| InvalidSignature)?;
-
-        let pk = RsaPssPubKey::new(public_key, key_info);
-
-        let sig_info = RsaPssSigInfo::new(digest_algo, salt_len);
-        let signature = Signature::RsaPss(RsaPssSignature::from_slice(signature), sig_info);
-
-        pk.verify(message, signature).map_err(|_| InvalidSignature)
-    }
-}
-
-fn decode_spki_spk(spki_spk: &[u8]) -> Result<&[u8], InvalidSignature> {
-    // public_key: unfortunately this is not a whole SPKI, but just the key material.
-    // decode the two integers manually.
-    let mut reader = der::SliceReader::new(spki_spk).map_err(|_| InvalidSignature)?;
-    let ne: [der::asn1::UintRef; 2] = reader.decode().map_err(|_| InvalidSignature)?;
-
-    let n = ne[0].as_bytes();
-    let e = ne[1].as_bytes();
-
-    if !matches!(e, [1, 0, 1]) {
-        // it's actually a NotSupportedError, but it amounts to the same
-        return Err(InvalidSignature);
-    }
-
-    Ok(n)
 }
 
 struct DerEcdsaSignature {
