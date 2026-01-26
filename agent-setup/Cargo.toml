@@ -1,0 +1,16 @@
+[package]
+name = "agent-keys"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+der = "0.7"
+libcrux = { git = "https://github.com/kraemv/libcrux", rev = "2e0a84d2a795c5d8991e8ab819143ec6feb8df9a" }
+pkcs8 = { version = "0.10.2", features = ["pem"] }
+pki-types = { package = "rustls-pki-types", version = "1" }
+rand_core = "0.9.5"
+rustls = { version = "0.23.18" }
+rustls-libcrux-provider = { workspace = true }
+webpki = { package = "rustls-webpki", version = "0.102", features = [
+    "alloc", "aws_lc_rs",
+], default-features = false }

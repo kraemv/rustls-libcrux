@@ -1,7 +1,7 @@
 use der::Reader;
 use libcrux::signature::{
-    DigestAlgorithm, EcDsaP256PubKey, EcDsaP256Signature, Ed25519PublicKey,
-    Ed25519Signature, Signature, VerificationKey,
+    DigestAlgorithm, EcDsaP256PubKey, EcDsaP256Signature, Ed25519PublicKey, Ed25519Signature,
+    Signature, VerificationKey,
 };
 use rustls::crypto::WebPkiSupportedAlgorithms;
 use rustls::pki_types::{alg_id, AlgorithmIdentifier, InvalidSignature, SignatureVerificationAlgorithm};
@@ -10,11 +10,7 @@ use webpki::{aws_lc_rs::RSA_PKCS1_2048_8192_SHA256 as AWS_LC_RSA_PKCS1_SHA256};
 use crate::std::vec::Vec;
 
 pub static ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
-    all: &[
-        ED25519,
-        ECDSA_P256_SHA256,
-        AWS_LC_RSA_PKCS1_SHA256,
-    ],
+    all: &[ED25519, ECDSA_P256_SHA256, AWS_LC_RSA_PKCS1_SHA256],
     mapping: &[
         (SignatureScheme::ED25519, &[ED25519]),
         (SignatureScheme::ECDSA_NISTP256_SHA256, &[ECDSA_P256_SHA256]),
@@ -44,14 +40,8 @@ impl SignatureVerificationAlgorithm for EcdsaP256Verify {
         let sig: DerEcdsaSignature = decoder.decode().map_err(|_| InvalidSignature)?;
         let r: [u8; 32] = sig.r.as_bytes().try_into().map_err(|_| InvalidSignature)?;
         let s: [u8; 32] = sig.s.as_bytes().try_into().map_err(|_| InvalidSignature)?;
-        let signature = Signature::EcDsaP256(
-            EcDsaP256Signature::from_raw(r, s),
-            self.0,
-        );
-        let pk = EcDsaP256PubKey::new(
-            public_key.try_into().map_err(|_| InvalidSignature)?,
-            self.0,
-        );
+        let signature = Signature::EcDsaP256(EcDsaP256Signature::from_raw(r, s), self.0);
+        let pk = EcDsaP256PubKey::new(public_key.try_into().map_err(|_| InvalidSignature)?, self.0);
         pk.verify(message, signature).map_err(|_| InvalidSignature)
     }
 
