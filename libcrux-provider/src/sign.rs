@@ -58,7 +58,7 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
 
                         let key_id = LibcruxKeyId {
                             id: key.try_into().map_err(|_| pkcs8::Error::KeyMalformed)?,
-                            scheme: scheme,
+                            scheme,
                         };
                         Ok(key_id)
                     }

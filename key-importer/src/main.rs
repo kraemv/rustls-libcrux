@@ -23,6 +23,9 @@ pub enum EcdsaSignatureScheme {
     ECDSA_NISTP256_SHA256,
 }
 
+const ID_EC_PUBLICKEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
+const ECDSA_NISTP256_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+
 pub fn import_key(value: PrivateKeyDer<'_>) -> Result<String, pkcs8::Error> {
     match value {
         PrivateKeyDer::Pkcs8(der) => {
@@ -67,14 +70,13 @@ pub fn import_key(value: PrivateKeyDer<'_>) -> Result<String, pkcs8::Error> {
                     
                     let pk = pk.as_ref();
                     
-                    let curve_parameter = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
                     let algorithm = pkcs8::AlgorithmIdentifierRef{
-                        oid: ObjectIdentifier::new_unwrap("1.2.840.10045.2.1"),
-                        parameters: Some(AnyRef::from(&curve_parameter)),
+                        oid: ID_EC_PUBLICKEY,
+                        parameters: Some(AnyRef::from(&ECDSA_NISTP256_SHA256)),
                     };
                     
                     let sk_info = PrivateKeyInfo{
-                        algorithm: algorithm, 
+                        algorithm, 
                         private_key: &id,
                         public_key: Some(pk),
                     };
