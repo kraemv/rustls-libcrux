@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+base64ct = "1.8.3"
 der = "0.7"
-libcrux = { git = "https://github.com/kraemv/libcrux", rev = "2e0a84d2a795c5d8991e8ab819143ec6feb8df9a" }
+libcrux = { git = "https://github.com/kraemv/libcrux", rev = "0d45b3908aaa267ae0408428196c661492af9c70" }
 pkcs8 = { version = "0.10.2", features = ["pem"] }
 pki-types = { package = "rustls-pki-types", version = "1" }
 sec1 = { version = "0.7.3", features = ["point"] }

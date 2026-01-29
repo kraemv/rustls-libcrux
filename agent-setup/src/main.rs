@@ -1,3 +1,4 @@
+use base64ct::{Base64, Encoding};
 use der::oid::Arc as OidArc;
 use der::{Tag, Tagged};
 use pkcs8::{LineEnding, ObjectIdentifier, PrivateKeyInfo};
@@ -16,6 +17,7 @@ use rustls::pki_types::pem::PemObject;
 
 #[derive(Debug)]
 enum Error {
+    Agent,
     Encoding,
     IO,
     Pkcs8,
@@ -45,11 +47,13 @@ Hash octets of id, finally secret key
 fn init_agent(args: [String; 3]) -> Result<(), Error> {
     let [_, _, agent_file_path] = args;
     let mut root_key = [0u8; 32];
+    let mut enc_root_key = [0u8; 44];
     
     let path = Path::new(agent_file_path.as_str());
     OsRng.try_fill_bytes(&mut root_key).unwrap();
+    Base64::encode(&root_key, &mut enc_root_key).map_err(|_| Error::Encoding)?;
     fs::create_dir_all(path).map_err(|_| Error::IO)?;
-    fs::write(path.join("root_file"), root_key).map_err(|_| Error::IO)
+    fs::write(path.join("root_file"), enc_root_key).map_err(|_| Error::IO)
 }
 
 fn encode_hex(bytes: &[u8]) -> String {
@@ -101,7 +105,7 @@ fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, St
                         _ => return Err(Error::Pkcs8),
                     };
 
-                    let (id, pub_k) = add_key(SecretKey::SigningKey(signing_key));
+                    let (id, pub_k) = add_key(SecretKey::SigningKey(signing_key)).map_err(|_| Error::Agent)?;
 
                     let hex_id = encode_hex(&id);
 
@@ -110,8 +114,10 @@ fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, St
                     let key_path = agent_path.join(key_path);
                     let root_file = agent_path.join("root_file");
                     let key_file = key_path.join(&hex_id);
+                    let mut enc_id: [u8; 44] = [0; 44];
+                    Base64::encode(&id, &mut enc_id).map_err(|_| Error::Encoding)?;
 
-                    let entry = [b"\n", scheme.as_slice(), b" ", id.as_slice()].concat();
+                    let entry = [b"\n", scheme.as_slice(), b" ", enc_id.as_slice()].concat();
                     
                     let mut agent_file = fs::OpenOptions::new().append(true).open(root_file).map_err(|_| Error::IO)?;
 
