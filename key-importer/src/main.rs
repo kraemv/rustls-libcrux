@@ -66,7 +66,7 @@ pub fn import_key(value: PrivateKeyDer<'_>) -> Result<String, pkcs8::Error> {
                         }
                     };
                     
-                    let (id, pk) = add_key(SecretKey::SigningKey(signing_key));
+                    let (id, pk) = add_key(SecretKey::SigningKey(signing_key)).map_err(|_| pkcs8::Error::KeyMalformed)?;
                     
                     let pk = pk.as_ref();
                     
