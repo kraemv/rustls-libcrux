@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 base64ct = "1.8.3"
-der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["pem"]}
+der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["alloc", "pem"]}
 libcrux = { git = "https://github.com/kraemv/libcrux", rev = "7668897" }
 pkcs8 = { git = "https://github.com/kraemv/formats" , rev = "c2da52f7", features = ["pem"]}
 x509-cert = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", default-features = false }
