@@ -1,11 +1,12 @@
 use der::oid::Arc as OidArc;
-use der::{Tag, Tagged};
-use pkcs8::{LineEnding, PrivateKeyInfo, ObjectIdentifier};
+use der::asn1::{BitString, OctetString, SetOf};
+use x509_cert::attr::AttributeTypeAndValue;
+use pkcs8::{LineEnding, ObjectIdentifier, PrivateKeyInfo, spki::AlgorithmIdentifier};
 use rustls::pki_types::PrivateKeyDer;
 
 use std::fs;
 
-use der::{AnyRef, EncodePem};
+use der::{Any, FixedTag, EncodePem};
 
 use libcrux::signature::{
     DigestAlgorithm, EcDsaP256PrivKey, EcDsaP256PrivateKey,
@@ -25,25 +26,25 @@ pub enum EcdsaSignatureScheme {
 
 const ID_EC_PUBLICKEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 const ECDSA_NISTP256_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+const LOCAL_KEY_ID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.21");
 
 pub fn import_key(value: PrivateKeyDer<'_>) -> Result<String, pkcs8::Error> {
     match value {
         PrivateKeyDer::Pkcs8(der) => {
-            let private_key_info = pkcs8::PrivateKeyInfo::try_from(der.secret_pkcs8_der())?;
+            type PkInfoType<'a> = PrivateKeyInfo<Any, OctetString, BitString, SetOf<AttributeTypeAndValue, 1>>;
+
+            let private_key_info: PkInfoType = pkcs8::PrivateKeyInfo::try_from(der.secret_pkcs8_der()).map_err(|_| pkcs8::Error::KeyMalformed)?;
             let algo_oid_arcs: Vec<OidArc> = private_key_info.algorithm.oid.arcs().collect();
 
             match algo_oid_arcs.as_slice() {
                 // `id-ecPublicKey' from RFC 3279
                 [1, 2, 840, 10045, 2, 1] => {
-                    let parameter = private_key_info
+                    let parameter_oid: ObjectIdentifier = private_key_info
                         .algorithm
                         .parameters
-                        .ok_or(pkcs8::Error::KeyMalformed)?;
-                    if parameter.tag() != Tag::ObjectIdentifier {
-                        return Err(pkcs8::Error::KeyMalformed);
-                    }
-
-                    let parameter_oid = ObjectIdentifier::from_bytes(parameter.value()).unwrap();
+                        .ok_or(pkcs8::Error::ParametersMalformed)?
+                        .to_ref()
+                        .try_into().map_err(|_| pkcs8::Error::ParametersMalformed)?;
                     let parameter_oid_arcs: Vec<OidArc> = parameter_oid.arcs().collect();
 
                     let scheme = match parameter_oid_arcs.as_slice() {
@@ -57,7 +58,7 @@ pub fn import_key(value: PrivateKeyDer<'_>) -> Result<String, pkcs8::Error> {
 
                     let signing_key = match scheme {
                         EcdsaSignatureScheme::ECDSA_NISTP256_SHA256 => {
-                            let key = EcDsaP256PrivateKey::try_from(key)
+                            let key = EcDsaP256PrivateKey::try_from(key.as_bytes())
                                 .map_err(|_| pkcs8::Error::KeyMalformed)?;
                             SigningKeyType::EcDsaP256(EcDsaP256PrivKey::new(
                                 key,
@@ -68,18 +69,29 @@ pub fn import_key(value: PrivateKeyDer<'_>) -> Result<String, pkcs8::Error> {
                     
                     let (id, pk) = add_key(SecretKey::SigningKey(signing_key)).map_err(|_| pkcs8::Error::KeyMalformed)?;
                     
-                    let pk = pk.as_ref();
-                    
-                    let algorithm = pkcs8::AlgorithmIdentifierRef{
+                    let pk = BitString::from_bytes([&[4u8], pk.as_ref()].concat().as_slice()).map_err(|_| pkcs8::Error::KeyMalformed)?;
+
+                    let algorithm = AlgorithmIdentifier{
                         oid: ID_EC_PUBLICKEY,
-                        parameters: Some(AnyRef::from(&ECDSA_NISTP256_SHA256)),
+                        parameters: Some(Any::from(ECDSA_NISTP256_SHA256)),
                     };
                     
-                    let sk_info = PrivateKeyInfo{
-                        algorithm, 
-                        private_key: &id,
-                        public_key: Some(pk),
+                    let enc_id = Any::new(OctetString::TAG, id.as_ref()).map_err(|_| pkcs8::Error::KeyMalformed)?;
+                    let attr = AttributeTypeAndValue{
+                        oid: LOCAL_KEY_ID,
+                        value: enc_id,
                     };
+                    let mut attrs = SetOf::<AttributeTypeAndValue, 1>::new();
+                    attrs.insert(attr).map_err(|_| pkcs8::Error::KeyMalformed)?;
+
+                    let private_key = OctetString::new([0u8; 0]).map_err(|_| pkcs8::Error::KeyMalformed)?;
+                    let sk_info: PkInfoType = PrivateKeyInfo {
+                        algorithm,
+                        private_key,
+                        public_key: Some(pk),
+                        attributes: Some(attrs),
+                    };
+
                     let enc_sk = sk_info.to_pem(LineEnding::LF).expect("Key encoding error");
                     Ok(enc_sk)
                 }

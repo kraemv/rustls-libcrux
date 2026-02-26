@@ -5,14 +5,15 @@ edition = "2021"
 
 [dependencies]
 base64ct = "1.8.3"
-der = "0.7"
-libcrux = { git = "https://github.com/kraemv/libcrux", rev = "d3ab6adc11ec2f104c2e4ee7ee145eef3519368c" }
-pkcs8 = { version = "0.10.2", features = ["pem"] }
+der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["pem"]}
+libcrux = { git = "https://github.com/kraemv/libcrux", rev = "7668897" }
+pkcs8 = { git = "https://github.com/kraemv/formats" , rev = "c2da52f7", features = ["pem"]}
+x509-cert = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", default-features = false }
 pki-types = { package = "rustls-pki-types", version = "1" }
-sec1 = { version = "0.7.3", features = ["point"] }
 rand_core = "0.9.5"
-rustls = { version = "0.23.18" }
+rustls = { version = "0.23.36" }
 rustls-libcrux-provider = { workspace = true }
-webpki = { package = "rustls-webpki", version = "0.102", features = [
-    "alloc", "aws_lc_rs",
+sec1 = { version = "0.7.3", features = ["alloc", "point", "der"] }
+webpki = { package = "rustls-webpki", version = "0.103", features = [
+    "alloc", 
 ], default-features = false }

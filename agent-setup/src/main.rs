@@ -1,15 +1,17 @@
 use base64ct::{Base64, Encoding};
+use der::asn1::{BitStringRef, OctetString, SetOfVec, SetOfRef};
 use der::oid::Arc as OidArc;
-use der::{Tag, Tagged};
-use pkcs8::{LineEnding, ObjectIdentifier, PrivateKeyInfo};
+use der::{Any, FixedTag};
+use pkcs8::{LineEnding, ObjectIdentifier, PrivateKeyInfo, spki::AlgorithmIdentifier};
+use x509_cert::attr::{Attribute};
 use rand_core::{OsRng, TryRngCore};
 use rustls::pki_types::PrivateKeyDer;
-use sec1::EcPrivateKey;
+use sec1::{der::Encode, EcPrivateKey};
 use std::{fs, path::Path};
 use std::fmt::Write as fmtWrite;
 use std::io::Write;
 
-use der::{AnyRef, EncodePem};
+use der::EncodePem;
 
 use libcrux::signature::{DigestAlgorithm, EcDsaP256PrivKey, EcDsaP256PrivateKey, SigningKeyType};
 use libcrux::{add_key, SecretKey};
@@ -66,28 +68,42 @@ fn encode_hex(bytes: &[u8]) -> String {
 
 const ID_EC_PUBLICKEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 const ECDSA_NISTP256_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
+const LOCAL_KEY_ID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.21");
+const SECP256R1_X: [u8; 32] = [
+    0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47,
+    0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4, 0x40, 0xf2,
+    0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0,
+    0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2, 0x96,
+];
+const SECP256R1_Y: [u8; 32] = [
+    0x4f, 0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b,
+    0x8e, 0xe7, 0xeb, 0x4a, 0x7c, 0x0f, 0x9e, 0x16,
+    0x2b, 0xce, 0x33, 0x57, 0x6b, 0x31, 0x5e, 0xce,
+    0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5,
+];
+
 
 fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, String), Error> {
     match value {
         PrivateKeyDer::Pkcs8(der) => {
-            let private_key_info = pkcs8::PrivateKeyInfo::try_from(der.secret_pkcs8_der()).map_err(|_| Error::Pkcs8)?;
+            type PkInfoType<'a> = PrivateKeyInfo<Any, OctetString, BitStringRef<'a>, SetOfRef<'a, Attribute>>;
+
+            let private_key_info: PkInfoType = pkcs8::PrivateKeyInfo::try_from(der.secret_pkcs8_der()).map_err(|_| Error::Pkcs8)?;
             let algo_oid_arcs: Vec<OidArc> = private_key_info.algorithm.oid.arcs().collect();
 
             match algo_oid_arcs.as_slice() {
                 // `id-ecPublicKey' from RFC 3279
                 [1, 2, 840, 10045, 2, 1] => {
-                    let parameter = private_key_info
+                    let parameter_oid: ObjectIdentifier = private_key_info
                         .algorithm
                         .parameters
-                        .ok_or(Error::Pkcs8)?;
-                    if parameter.tag() != Tag::ObjectIdentifier {
-                        return Err(Error::Pkcs8);
-                    }
+                        .ok_or(Error::Pkcs8)?
+                        .to_ref()
+                        .try_into().map_err(|_| Error::Pkcs8)?;
 
-                    let parameter_oid = ObjectIdentifier::from_bytes(parameter.value()).unwrap();
                     let parameter_oid_arcs: Vec<OidArc> = parameter_oid.arcs().collect();
 
-                    let key = EcPrivateKey::try_from(private_key_info.private_key)
+                    let key = EcPrivateKey::try_from(private_key_info.private_key.as_bytes())
                         .map_err(|_| Error::Pkcs8)?
                         .private_key;
                     
@@ -126,16 +142,38 @@ fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, St
                     agent_file.write(&entry).map_err(|_| Error::IO)?;
                     
                     let pk = [&[4u8], pub_k.as_ref()].concat();
+                    let pk_ref = BitStringRef::from_bytes(pk.as_slice()).map_err(|_| Error::Encoding)?;
 
-                    let algorithm = pkcs8::AlgorithmIdentifierRef{
+                    let algorithm = AlgorithmIdentifier{
                         oid: ID_EC_PUBLICKEY,
-                        parameters: Some(AnyRef::from(&ECDSA_NISTP256_SHA256)),
+                        parameters: Some(Any::from(ECDSA_NISTP256_SHA256)),
                     };
+                    
+                    let enc_id = Any::new(OctetString::TAG, id.as_ref()).map_err(|_| Error::Encoding)?;
+                    let mut values = SetOfVec::new();
+                    values.insert(enc_id).map_err(|_| Error::Encoding)?;
+                    let attr = Attribute{
+                        oid: LOCAL_KEY_ID,
+                        values,
+                    };
+                    let mut attrs = SetOfVec::<Attribute>::new();
+                    attrs.insert(attr).map_err(|_| Error::Encoding)?;
+                    let attrs_ref = SetOfRef::try_from(attrs.as_slice()).map_err(|_| Error::Pkcs8)?;
 
-                    let sk_info = PrivateKeyInfo {
+                    let private_key = sec1::point::EncodedPoint::from_affine_coordinates(&SECP256R1_X.into(), &SECP256R1_Y.into(), false);
+                    let private_key = EcPrivateKey{
+                        private_key: private_key.as_bytes(),
+                        parameters: None,
+                        public_key: None,
+                    };
+                    let private_key = private_key.to_der().map_err(|_| Error::Encoding)?;
+                    let private_key = OctetString::new(private_key).map_err(|_| Error::Encoding)?;
+
+                    let sk_info: PkInfoType = PrivateKeyInfo {
                         algorithm,
-                        private_key: &id,
-                        public_key: Some(&pk),
+                        private_key,
+                        public_key: Some(pk_ref),
+                        attributes: Some(attrs_ref),
                     };
 
                     let enc_sk = sk_info.to_pem(LineEnding::LF).map_err(|_| Error::Encoding)?;

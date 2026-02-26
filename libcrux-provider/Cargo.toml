@@ -8,19 +8,20 @@ description = "A rustls crypto provider based on libcrux."
 [dependencies]
 rustls = { version = "0.23.36" }
 
-libcrux = { git = "https://github.com/kraemv/libcrux", rev = "d3ab6ad" }
+libcrux = { git = "https://github.com/kraemv/libcrux", rev = "7668897" }
 libcrux-sha2 = "0.0.5"
 libcrux-hmac = "0.0.5"
 libcrux-ed25519 = "0.0.5"
 libcrux-traits = "0.0.5"
 libcrux-ml-kem = "0.0.6"
 
-der = "0.7"
+der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["alloc", "oid"]}
 hpke-rs = "0.5"
 hpke-rs-crypto = "0.4"
 hpke-rs-rust-crypto = "0.4"
-pkcs8 = { version = "0.10.2", features = ["pem"] }
+pkcs8 = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["pem"]}
 pkcs1 = "0.7.5"
+x509-cert = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", default-features = false }
 pki-types = { package = "rustls-pki-types", version = "1" }
 rand_core = { version = "0.9", features = ["os_rng"] }
 sec1 = { version = "0.7.3" }

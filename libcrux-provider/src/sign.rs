@@ -3,15 +3,15 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use der::oid::Arc as OidArc;
-use der::{Decode, Tag, Tagged};
-use pkcs8::{PrivateKeyInfo, ObjectIdentifier};
-use rand_core::TryRngCore;
-use sec1::EcPrivateKey;
+use der::asn1::{BitString, OctetString, SetOfRef, UintRef};
+use pkcs8::{ObjectIdentifier, PrivateKeyInfo};
+use x509_cert::attr::AttributeTypeAndValue;
+use pkcs8::der::{Tagged};
 use rustls::pki_types::PrivateKeyDer;
 use rustls::sign::{Signer, SigningKey};
 use rustls::{SignatureAlgorithm, SignatureScheme};
 
-use der::{asn1::UintRef, Encode};
+use der::{Any, Encode, FixedTag};
 
 use libcrux::sign_for_id;
 use libcrux::signature::{EcDsaP256Signature, Signature};
@@ -23,28 +23,29 @@ pub enum EcdsaSignatureScheme {
     ECDSA_NISTP256_SHA256,
 }
 
+const LOCAL_KEY_ID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.21");
+
 impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
     type Error = pkcs8::Error;
 
     fn try_from(value: PrivateKeyDer<'_>) -> Result<Self, Self::Error> {
         match value {
             PrivateKeyDer::Pkcs8(der) => {
-                let private_key_info = pkcs8::PrivateKeyInfo::try_from(der.secret_pkcs8_der())?;
+                type PkInfoType<'a> = PrivateKeyInfo<Any, OctetString, BitString, SetOfRef<'a, AttributeTypeAndValue>>;
+
+                let private_key_info: PkInfoType = pkcs8::PrivateKeyInfo::try_from(der.secret_pkcs8_der())?;
                 let algo_oid_arcs: Vec<OidArc> = private_key_info.algorithm.oid.arcs().collect();
 
                 match algo_oid_arcs.as_slice() {
                     // `id-ecPublicKey' from RFC 3279
                     [1, 2, 840, 10045, 2, 1] => {
-                        let parameter = private_key_info
+                        let parameter_oid: ObjectIdentifier = private_key_info
                             .algorithm
                             .parameters
-                            .ok_or(pkcs8::Error::KeyMalformed)?;
-                        if parameter.tag() != Tag::ObjectIdentifier {
-                            return Err(pkcs8::Error::KeyMalformed);
-                        }
+                            .ok_or(pkcs8::Error::KeyMalformed)?
+                            .to_ref()
+                            .try_into().map_err(|_| pkcs8::Error::KeyMalformed)?;
 
-                        let parameter_oid =
-                            ObjectIdentifier::from_bytes(parameter.value()).unwrap();
                         let parameter_oid_arcs: Vec<OidArc> = parameter_oid.arcs().collect();
 
                         let scheme = match parameter_oid_arcs.as_slice() {
@@ -54,10 +55,21 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
                             _ => return Err(pkcs8::Error::KeyMalformed),
                         };
 
-                        let key = private_key_info.private_key;
+                        let attrs = private_key_info.attributes.ok_or(pkcs8::Error::KeyMalformed)?;
+                        let id = attrs.get(0).ok_or(pkcs8::Error::KeyMalformed)?;
+
+                        let id = match id.oid {
+                            LOCAL_KEY_ID => &id.value,
+                            _ => return Err(pkcs8::Error::KeyMalformed),
+                        };
+
+                        let id = match id.tag()  {
+                            OctetString::TAG => id.value().try_into().map_err(|_| pkcs8::Error::KeyMalformed)?,
+                            _ => return Err(pkcs8::Error::KeyMalformed),
+                        };
 
                         let key_id = LibcruxKeyId {
-                            id: key.try_into().map_err(|_| pkcs8::Error::KeyMalformed)?,
+                            id,
                             scheme,
                         };
                         Ok(key_id)

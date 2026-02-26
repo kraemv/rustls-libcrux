@@ -7,7 +7,6 @@ use rustls::crypto::WebPkiSupportedAlgorithms;
 use rustls::pki_types::{alg_id, AlgorithmIdentifier, InvalidSignature, SignatureVerificationAlgorithm};
 use rustls::SignatureScheme;
 use webpki::{aws_lc_rs::RSA_PKCS1_2048_8192_SHA256 as AWS_LC_RSA_PKCS1_SHA256};
-use crate::std::vec::Vec;
 
 pub static ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     all: &[ED25519, ECDSA_P256_SHA256, AWS_LC_RSA_PKCS1_SHA256],
@@ -91,6 +90,8 @@ struct DerEcdsaSignature {
 }
 
 impl<'a> der::Decode<'a> for DerEcdsaSignature {
+    type Error = der::Error;
+
     fn decode<R: Reader<'a>>(decoder: &mut R) -> der::Result<Self> {
         decoder.sequence(|decoder| {
             Ok(Self {
