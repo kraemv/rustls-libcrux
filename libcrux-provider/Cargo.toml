@@ -8,7 +8,7 @@ description = "A rustls crypto provider based on libcrux."
 [dependencies]
 rustls = { version = "0.23.36" }
 
-libcrux = { git = "https://github.com/kraemv/libcrux", rev = "7668897" }
+libcrux = { git = "https://github.com/kraemv/libcrux", rev = "a9fa5a87" }
 libcrux-sha2 = "0.0.5"
 libcrux-hmac = "0.0.5"
 libcrux-ed25519 = "0.0.5"

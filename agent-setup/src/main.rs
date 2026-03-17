@@ -69,18 +69,6 @@ fn encode_hex(bytes: &[u8]) -> String {
 const ID_EC_PUBLICKEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 const ECDSA_NISTP256_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 const LOCAL_KEY_ID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.21");
-const SECP256R1_X: [u8; 32] = [
-    0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47,
-    0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4, 0x40, 0xf2,
-    0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0,
-    0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2, 0x96,
-];
-const SECP256R1_Y: [u8; 32] = [
-    0x4f, 0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b,
-    0x8e, 0xe7, 0xeb, 0x4a, 0x7c, 0x0f, 0x9e, 0x16,
-    0x2b, 0xce, 0x33, 0x57, 0x6b, 0x31, 0x5e, 0xce,
-    0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5,
-];
 
 
 fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, String), Error> {
@@ -121,7 +109,7 @@ fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, St
                         _ => return Err(Error::Pkcs8),
                     };
 
-                    let (id, pub_k) = add_key(SecretKey::SigningKey(signing_key)).map_err(|_| Error::Agent)?;
+                    let (id, _) = add_key(SecretKey::SigningKey(signing_key)).map_err(|_| Error::Agent)?;
 
                     let hex_id = encode_hex(&id);
 
@@ -141,8 +129,8 @@ fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, St
                     fs::write(key_file, key).map_err(|_| Error::IO)?;
                     agent_file.write(&entry).map_err(|_| Error::IO)?;
                     
-                    let pk = [&[4u8], pub_k.as_ref()].concat();
-                    let pk_ref = BitStringRef::from_bytes(pk.as_slice()).map_err(|_| Error::Encoding)?;
+                    // let pk = [&[4u8], pub_k.as_ref()].concat();
+                    // let pk_ref = BitStringRef::from_bytes(pk.as_slice()).map_err(|_| Error::Encoding)?;
 
                     let algorithm = AlgorithmIdentifier{
                         oid: ID_EC_PUBLICKEY,
@@ -160,9 +148,10 @@ fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, St
                     attrs.insert(attr).map_err(|_| Error::Encoding)?;
                     let attrs_ref = SetOfRef::try_from(attrs.as_slice()).map_err(|_| Error::Pkcs8)?;
 
-                    let private_key = sec1::point::EncodedPoint::from_affine_coordinates(&SECP256R1_X.into(), &SECP256R1_Y.into(), false);
+                    let mut private_key = [0u8; 32];
+                    private_key[31] = 1;
                     let private_key = EcPrivateKey{
-                        private_key: private_key.as_bytes(),
+                        private_key: private_key.as_ref(),
                         parameters: None,
                         public_key: None,
                     };
@@ -172,7 +161,7 @@ fn import_key(value: PrivateKeyDer<'_>, agent_path: &Path) -> Result<(String, St
                     let sk_info: PkInfoType = PrivateKeyInfo {
                         algorithm,
                         private_key,
-                        public_key: Some(pk_ref),
+                        public_key: None,
                         attributes: Some(attrs_ref),
                     };
 

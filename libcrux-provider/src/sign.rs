@@ -5,7 +5,7 @@ use alloc::vec::Vec;
 use der::oid::Arc as OidArc;
 use der::asn1::{BitString, OctetString, SetOfRef, UintRef};
 use pkcs8::{ObjectIdentifier, PrivateKeyInfo};
-use x509_cert::attr::AttributeTypeAndValue;
+use x509_cert::attr::Attribute;
 use pkcs8::der::{Tagged};
 use rustls::pki_types::PrivateKeyDer;
 use rustls::sign::{Signer, SigningKey};
@@ -31,7 +31,7 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
     fn try_from(value: PrivateKeyDer<'_>) -> Result<Self, Self::Error> {
         match value {
             PrivateKeyDer::Pkcs8(der) => {
-                type PkInfoType<'a> = PrivateKeyInfo<Any, OctetString, BitString, SetOfRef<'a, AttributeTypeAndValue>>;
+                type PkInfoType<'a> = PrivateKeyInfo<Any, OctetString, BitString, SetOfRef<'a, Attribute>>;
 
                 let private_key_info: PkInfoType = pkcs8::PrivateKeyInfo::try_from(der.secret_pkcs8_der())?;
                 let algo_oid_arcs: Vec<OidArc> = private_key_info.algorithm.oid.arcs().collect();
@@ -59,7 +59,7 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
                         let id = attrs.get(0).ok_or(pkcs8::Error::KeyMalformed)?;
 
                         let id = match id.oid {
-                            LOCAL_KEY_ID => &id.value,
+                            LOCAL_KEY_ID => &id.values.get(0).ok_or(pkcs8::Error::KeyMalformed)?,
                             _ => return Err(pkcs8::Error::KeyMalformed),
                         };
 
