@@ -4,8 +4,13 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+use std::path::PathBuf;
+use std::sync::{LazyLock, Mutex, MutexGuard};
+use std::vec::Vec;
+
 use alloc::sync::Arc;
 
+use libcrux::agent::agent::Agent;
 use rustls::crypto::CryptoProvider;
 use rustls::pki_types::PrivateKeyDer;
 
@@ -18,6 +23,29 @@ mod kx;
 mod pq;
 pub mod sign;
 mod verify;
+
+const AGENT_NUM: usize = 16;
+
+static AGENTS: LazyLock<Vec<Mutex<Agent>>> = LazyLock::new(|| {
+    let mut agents = Vec::with_capacity(AGENT_NUM);
+    for _ in 0..AGENT_NUM {
+        let agent_path =  PathBuf::from(env!("HOME"))
+            .join("agent-setup")
+            .into_os_string()
+            .into_string()
+            .unwrap();
+        let agent = Agent::connect_agent(agent_path)
+            .expect("Agent failed to start");
+        agents.push(Mutex::new(agent));
+    }
+    agents
+});
+
+pub fn get_agent() -> Option<MutexGuard<'static, Agent>> {
+    AGENTS
+        .iter()
+        .find_map(|agent| agent.try_lock().ok())
+}
 
 pub fn provider() -> CryptoProvider {
     CryptoProvider {

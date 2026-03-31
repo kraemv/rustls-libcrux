@@ -8,18 +8,17 @@ description = "A rustls crypto provider based on libcrux."
 [dependencies]
 rustls = { version = "0.23.36" }
 
-libcrux = { git = "https://github.com/kraemv/libcrux", rev = "a9fa5a87" }
-libcrux-sha2 = "0.0.5"
-libcrux-hmac = "0.0.5"
-libcrux-ed25519 = "0.0.5"
-libcrux-traits = "0.0.5"
-libcrux-ml-kem = "0.0.6"
+libcrux = { git = "https://github.com/kraemv/libcrux", rev = "5275af59" }
+libcrux-ecdh = "0.0.6"
+libcrux-traits = "0.0.6"
 
-der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["alloc", "oid"]}
-hpke-rs = "0.5"
+hpke-rs = { version = "0.5", features = ["hazmat"]}
 hpke-rs-crypto = "0.4"
 hpke-rs-rust-crypto = "0.4"
+
+der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["alloc", "oid"]}
 pkcs8 = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["pem"]}
+
 pkcs1 = "0.7.5"
 x509-cert = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", default-features = false }
 pki-types = { package = "rustls-pki-types", version = "1" }
@@ -36,4 +35,4 @@ webpki-roots = "0.26"
 
 [features]
 default = ["std"]
-std = ["hpke-rs/std", "hpke-rs-crypto/std", "pkcs8/std", "rustls/std"]
+std = ["pkcs8/std", "rustls/std"]

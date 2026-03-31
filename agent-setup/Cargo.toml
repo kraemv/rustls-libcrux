@@ -12,7 +12,6 @@ x509-cert = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", defau
 pki-types = { package = "rustls-pki-types", version = "1" }
 rand_core = "0.9.5"
 rustls = { version = "0.23.36" }
-rustls-libcrux-provider = { workspace = true }
 sec1 = { version = "0.7.3", features = ["alloc", "point", "der"] }
 webpki = { package = "rustls-webpki", version = "0.103", features = [
     "alloc", 

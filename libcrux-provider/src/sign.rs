@@ -13,8 +13,9 @@ use rustls::{SignatureAlgorithm, SignatureScheme};
 
 use der::{Any, Encode, FixedTag};
 
-use libcrux::sign_for_id;
-use libcrux::signature::{EcDsaP256Signature, Signature};
+use libcrux::algorithms::ecdsa;
+
+use crate::get_agent;
 
 #[derive(Clone, Debug, Copy)]
 pub enum EcdsaSignatureScheme {
@@ -90,7 +91,7 @@ pub struct LibcruxKeyId {
 
 impl SigningKey for LibcruxKeyId {
     fn choose_scheme(&self, offered: &[SignatureScheme]) -> Option<Box<dyn Signer>> {
-        if offered.contains(&self.scheme) {
+        if offered.contains(&self.scheme()) {
             Some(Box::new(self.clone()))
         } else {
             None
@@ -118,31 +119,29 @@ impl SigningKey for LibcruxKeyId {
     }
 }
 
-fn into_signing_error(_e: libcrux::signature::Error) -> rustls::Error {
+fn into_signing_error(_e: libcrux::agent::Error) -> rustls::Error {
     rustls::Error::General(String::from("Signing failed"))
 }
 
 impl Signer for LibcruxKeyId {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
+        let agent = get_agent().ok_or(rustls::Error::General(String::from("No agent available")))?;
         match self.scheme {
             SignatureScheme::ECDSA_NISTP256_SHA256 => {
-                let sig = sign_for_id(self.id, message);
+                let sig = agent.sign_for_ecdsa_p256_id(self.id, message.to_vec());
                 match sig {
-                    Ok(Signature::EcDsaP256(val, _)) => {
-                        der_encode_ecdsa_signature(&val).map_err(|_| {
+                    Ok(sig) => {
+                        der_encode_ecdsa_signature(&sig.get_signature()).map_err(|_| {
                             rustls::Error::General(String::from(
                                 "error der encoding ecdsa signature",
                             ))
                         })
                     }
                     Err(_) => Err(rustls::Error::General(String::from("Signing failed"))),
-                    _ => Err(rustls::Error::General(String::from(
-                        "error der encoding ecdsa signature",
-                    ))),
                 }
             }
-            SignatureScheme::ED25519 => sign_for_id(self.id, message)
-                .map(|sig| sig.into_vec())
+            SignatureScheme::ED25519 => agent.sign_for_ed25519_id(self.id, message.to_vec())
+                .map(|sig| sig.into_bytes().to_vec())
                 .map_err(into_signing_error),
             _ => Err(rustls::Error::General(String::from("Unsupported scheme"))),
         }
@@ -156,7 +155,7 @@ impl Signer for LibcruxKeyId {
 // copied from ecdsa crate, where it wasn't public
 /// Create an ASN.1 DER encoded signature from big endian `r` and `s` scalar
 /// components.
-fn der_encode_ecdsa_signature(sig: &EcDsaP256Signature) -> der::Result<Vec<u8>> {
+fn der_encode_ecdsa_signature(sig: &ecdsa::p256::Signature) -> der::Result<Vec<u8>> {
     let (r, s) = sig.as_bytes();
     let r = UintRef::new(r)?;
     let s = UintRef::new(s)?;
