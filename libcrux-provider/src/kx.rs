@@ -2,7 +2,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use libcrux::ecdh;
+use libcrux_ecdh as ecdh;
 
 use rustls::crypto::{self, SupportedKxGroup as _};
 use rand_core::TryRngCore;
@@ -35,8 +35,8 @@ impl crypto::ActiveKeyExchange for KeyExchange {
 }
 
 pub const ALL_KX_GROUPS: &[&dyn crypto::SupportedKxGroup] = &[
-    &X25519 as &dyn crypto::SupportedKxGroup,
     &X25519MlKem768 as &dyn crypto::SupportedKxGroup,
+    &X25519 as &dyn crypto::SupportedKxGroup,
 ];
 
 #[derive(Debug)]
