@@ -6,9 +6,10 @@ license = "Apache-2.0 OR ISC OR MIT"
 description = "A rustls crypto provider based on libcrux."
 
 [dependencies]
+libcrux = { workspace = true }
+
 rustls = { version = "0.23.36" }
 
-libcrux = { git = "https://github.com/kraemv/libcrux", rev = "5275af59" }
 libcrux-ecdh = "0.0.6"
 libcrux-traits = "0.0.6"
 

@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+libcrux = { workspace = true }
+
 base64ct = "1.8.3"
 der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["alloc", "pem"]}
-libcrux = { git = "https://github.com/kraemv/libcrux", rev = "5275af59" }
 pkcs8 = { git = "https://github.com/kraemv/formats" , rev = "c2da52f7", features = ["pem"]}
 x509-cert = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", default-features = false }
 pki-types = { package = "rustls-pki-types", version = "1" }
