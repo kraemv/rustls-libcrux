@@ -101,7 +101,7 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
                         .map_err(|_| Error::Pkcs8)?
                         .private_key;
                     
-                    let (id, _pk) = match parameter_oid_arcs.as_slice() {
+                    let (id, pk) = match parameter_oid_arcs.as_slice() {
                         [1, 2, 840, 10045, 3, 1, 7] => {
                             let key = ecdsa::p256::PrivateKey::try_from(key).map_err(|_| Error::Pkcs8)?;
                             let alg = DigestAlgorithm::Sha256;
@@ -112,8 +112,9 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
                         _ => return Err(Error::Pkcs8),
                     };
                     
-                    // let pk = [&[4u8], pub_k.as_ref()].concat();
-                    // let pk_ref = BitStringRef::from_bytes(pk.as_slice()).map_err(|_| Error::Encoding)?;
+                    let key = pk.get_key().0;
+                    let pk: Vec<u8> = [[4u8].as_slice(), key.as_slice()].concat();
+                    let pk_ref = BitStringRef::from_bytes(pk.as_slice()).map_err(|_| Error::Encoding)?;
 
                     let algorithm = AlgorithmIdentifier{
                         oid: ID_EC_PUBLICKEY,
@@ -144,7 +145,7 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
                     let sk_info: PkInfoType = PrivateKeyInfo {
                         algorithm,
                         private_key,
-                        public_key: None,
+                        public_key: Some(pk_ref),
                         attributes: Some(attrs_ref),
                     };
 
