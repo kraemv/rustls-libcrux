@@ -105,7 +105,7 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
                         [1, 2, 840, 10045, 3, 1, 7] => {
                             let key = ecdsa::p256::PrivateKey::try_from(key).map_err(|_| Error::Pkcs8)?;
                             let alg = DigestAlgorithm::Sha256;
-                            agent.add_ecdsa_p256_key(EcDsaP256PrivateKey::new(key, alg)).map_err(|_| Error::Agent)?
+                            agent.ecdsa_p256_add_key(EcDsaP256PrivateKey::new(key, alg)).map_err(|_| Error::Agent)?
                         }
                         // [1, 3, 132, 0, 34] => EcdsaSignatureScheme::ECDSA_NISTP384_SHA384,
                         // [1, 3, 132, 0, 35] => EcdsaSignatureScheme::ECDSA_NISTP521_SHA512,

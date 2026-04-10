@@ -15,7 +15,7 @@ mod hmac;
 #[cfg(feature = "std")]
 pub mod hpke;
 mod kx;
-mod pq;
+// mod pq;
 pub mod sign;
 mod verify;
 
