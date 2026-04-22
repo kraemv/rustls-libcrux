@@ -1,3 +1,5 @@
+use core::fmt::Debug;
+
 use alloc::boxed::Box;
 use alloc::vec::Vec;
 
@@ -13,7 +15,7 @@ use rustls::{SignatureAlgorithm, SignatureScheme};
 use der::{Any, Encode, FixedTag};
 
 use libcrux::algorithms::{ecdsa, ed25519};
-use libcrux::libcrux::signature::{self as libcrux_api, VerificationKeyType};
+use libcrux::libcrux::signature::{self as libcrux_api, SigningKeyID, VerificationKeyType};
 use libcrux_api::SigningKey as LibcruxSigningKey;
 use libcrux_api::SignatureScheme as LibcruxSignatureScheme;
 
@@ -26,7 +28,7 @@ pub enum EcdsaSignatureScheme {
 
 const LOCAL_KEY_ID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.21");
 
-impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
+impl<Scheme> TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId<Scheme> {
     type Error = pkcs8::Error;
 
     fn try_from(value: PrivateKeyDer<'_>) -> Result<Self, Self::Error> {
@@ -65,7 +67,7 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
                                     .map_err(|_| pkcs8::Error::KeyMalformed)?
                             }
                             LibcruxSignatureScheme::Ed25519 => {
-                                let pk = ed25519::VerificationKey::from_bytes(public_key.try_into().map_err(|_| pkcs8::Error::KeyMalformed)?);
+                                let pk: ed25519::VerificationKey = ed25519::VerificationKey::from_bytes(public_key.try_into().map_err(|_| pkcs8::Error::KeyMalformed)?);
                                 VerificationKeyType::Ed25519(libcrux::agent::signatures::Ed25519PublicKey::new(pk))       
                             }
                             _ => return Err(pkcs8::Error::KeyMalformed),
@@ -95,9 +97,11 @@ impl TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId {
 }
 
 #[derive(Clone, Debug)]
-pub struct LibcruxKeyId(libcrux_api::SigningKeyID);
+pub struct LibcruxKeyId<Scheme> {
+    sk: SigningKeyID<Scheme>
+}
 
-impl SigningKey for LibcruxKeyId {
+impl<Scheme: Debug + Sync + Send> SigningKey for LibcruxKeyId<Scheme> where LibcruxKeyId<Scheme>: Signer {
     fn choose_scheme(&self, offered: &[SignatureScheme]) -> Option<Box<dyn Signer>> {
         if offered.contains(&self.scheme()) {
             Some(Box::new(self.clone()))
@@ -131,7 +135,7 @@ fn signing_error(msg: &str) -> rustls::Error {
     rustls::Error::General(msg.into())
 }
 
-impl Signer for LibcruxKeyId {
+impl<Scheme: Debug + Sync + Send> Signer for LibcruxKeyId<Scheme> {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
         let signature = self.0.sign(message)
              .map_err(|_| signing_error("signing failed"))
