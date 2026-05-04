@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 
 use der::oid::Arc as OidArc;
 use der::asn1::{BitString, OctetString, SetOfRef, UintRef};
+use libcrux::agent::signatures::{EcDsaP256PublicKey, Ed25519PublicKey};
 use pkcs8::{ObjectIdentifier, PrivateKeyInfo};
 use x509_cert::attr::Attribute;
 use pkcs8::der::{Tagged};
@@ -15,7 +16,7 @@ use rustls::{SignatureAlgorithm, SignatureScheme};
 use der::{Any, Encode, FixedTag};
 
 use libcrux::algorithms::{ecdsa, ed25519};
-use libcrux::libcrux::signature::{self as libcrux_api, SigningKeyID, VerificationKeyType};
+use libcrux::libcrux::signature::{self as libcrux_api, EcDsaP256, Ed25519, Sig, SigningKeyID, VerificationKey};
 use libcrux_api::SigningKey as LibcruxSigningKey;
 use libcrux_api::SignatureScheme as LibcruxSignatureScheme;
 
@@ -28,8 +29,12 @@ pub enum EcdsaSignatureScheme {
 
 const LOCAL_KEY_ID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.21");
 
-impl<Scheme> TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId<Scheme> {
-    type Error = pkcs8::Error;
+impl<Scheme, Vk> LibcruxKeyId<Scheme, Vk> 
+where 
+    Scheme: Sig,
+    Vk: VerificationKey
+{
+    fn new(id: [u8; 32], verification_key: Vec<u8>, )
 
     fn try_from(value: PrivateKeyDer<'_>) -> Result<Self, Self::Error> {
         match value {
@@ -42,51 +47,21 @@ impl<Scheme> TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId<Scheme> {
                 match algo_oid_arcs.as_slice() {
                     // `id-ecPublicKey' from RFC 3279
                     [1, 2, 840, 10045, 2, 1] => {
-                        let parameter_oid: ObjectIdentifier = private_key_info
-                            .algorithm
-                            .parameters
-                            .ok_or(pkcs8::Error::KeyMalformed)?
-                            .to_ref()
-                            .try_into().map_err(|_| pkcs8::Error::KeyMalformed)?;
-
-                        let parameter_oid_arcs: Vec<OidArc> = parameter_oid.arcs().collect();
-
-                        let scheme = match parameter_oid_arcs.as_slice() {
-                            [1, 2, 840, 10045, 3, 1, 7] => LibcruxSignatureScheme::EcDsaP256(ecdsa::DigestAlgorithm::Sha256),
-                            // [1, 3, 132, 0, 34] => EcdsaSignatureScheme::ECDSA_NISTP384_SHA384,
-                            // [1, 3, 132, 0, 35] => EcdsaSignatureScheme::ECDSA_NISTP521_SHA512,
-                            _ => return Err(pkcs8::Error::KeyMalformed),
-                        };
-
-                        let public_key = private_key_info.public_key.ok_or(pkcs8::Error::KeyMalformed)?;
-                        let public_key = public_key.as_bytes().ok_or(pkcs8::Error::KeyMalformed)?;
-                        let public_key = match scheme {
+                        
+                        match scheme {
                             LibcruxSignatureScheme::EcDsaP256(ecdsa::DigestAlgorithm::Sha256) => {
-                                decode_ecdsa_public_key(public_key.try_into().map_err(|_| pkcs8::Error::KeyMalformed)?)
-                                    .map(VerificationKeyType::EcDsaP256)
-                                    .map_err(|_| pkcs8::Error::KeyMalformed)?
+                                let vk = decode_ecdsa_public_key(public_key.try_into().map_err(|_| pkcs8::Error::KeyMalformed)?)
+                                    .map_err(|_| pkcs8::Error::KeyMalformed)?;
+                                let sk = libcrux_api::SigningKeyID::<EcDsaP256, EcDsaP256PublicKey>::new(id, vk);
+                                Ok(Self{sk})
                             }
                             LibcruxSignatureScheme::Ed25519 => {
-                                let pk: ed25519::VerificationKey = ed25519::VerificationKey::from_bytes(public_key.try_into().map_err(|_| pkcs8::Error::KeyMalformed)?);
-                                VerificationKeyType::Ed25519(libcrux::agent::signatures::Ed25519PublicKey::new(pk))       
+                                let vk = Ed25519PublicKey::new(ed25519::VerificationKey::from_bytes(public_key.try_into().map_err(|_| pkcs8::Error::KeyMalformed)?));
+                                let sk = libcrux_api::SigningKeyID::<Ed25519, Ed25519PublicKey>::new(id, vk);
+                                Ok(Self{sk})
                             }
-                            _ => return Err(pkcs8::Error::KeyMalformed),
-                        };
-
-                        let attrs = private_key_info.attributes.ok_or(pkcs8::Error::KeyMalformed)?;
-                        let id = attrs.get(0).ok_or(pkcs8::Error::KeyMalformed)?;
-
-                        let id = match id.oid {
-                            LOCAL_KEY_ID => &id.values.get(0).ok_or(pkcs8::Error::KeyMalformed)?,
-                            _ => return Err(pkcs8::Error::KeyMalformed),
-                        };
-
-                        let id = match id.tag()  {
-                            OctetString::TAG => id.value().try_into().map_err(|_| pkcs8::Error::KeyMalformed)?,
-                            _ => return Err(pkcs8::Error::KeyMalformed),
-                        };
-
-                        Ok(LibcruxKeyId(libcrux_api::SigningKeyID::new(id, scheme, public_key)))
+                            _ => Err(pkcs8::Error::KeyMalformed),
+                        }
                     }
                     _ => Err(pkcs8::Error::KeyMalformed),
                 }
@@ -97,14 +72,23 @@ impl<Scheme> TryFrom<PrivateKeyDer<'_>> for LibcruxKeyId<Scheme> {
 }
 
 #[derive(Clone, Debug)]
-pub struct LibcruxKeyId<Scheme> {
-    sk: SigningKeyID<Scheme>
+pub struct LibcruxKeyId<Scheme, Vk> 
+where 
+    Scheme: Sig,
+    Vk: VerificationKey
+{
+    sk: SigningKeyID<Scheme, Vk>
 }
 
-impl<Scheme: Debug + Sync + Send> SigningKey for LibcruxKeyId<Scheme> where LibcruxKeyId<Scheme>: Signer {
+impl<Scheme, Vk> SigningKey for LibcruxKeyId<Scheme, Vk>
+where
+    Scheme: Sig + Debug + Sync + Send + Clone + 'static,
+    Vk: VerificationKey + Clone + 'static,
+{
     fn choose_scheme(&self, offered: &[SignatureScheme]) -> Option<Box<dyn Signer>> {
-        if offered.contains(&self.scheme()) {
-            Some(Box::new(self.clone()))
+        if offered.contains(&Scheme) {
+            let key: LibcruxKeyId<Scheme, Vk> = self.clone();
+            Some(Box::new(key))
         } else {
             None
         }
@@ -135,9 +119,14 @@ fn signing_error(msg: &str) -> rustls::Error {
     rustls::Error::General(msg.into())
 }
 
-impl<Scheme: Debug + Sync + Send> Signer for LibcruxKeyId<Scheme> {
+impl<Scheme: Debug + Sync + Send, Vk> Signer for LibcruxKeyId<Scheme, Vk> 
+where 
+    Scheme: Sig,
+    Vk: VerificationKey,
+    LibcruxKeyId<Scheme, Vk>: LibcruxSigningKey,
+{
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
-        let signature = self.0.sign(message)
+        let signature = LibcruxSigningKey::sign(self, message)
              .map_err(|_| signing_error("signing failed"))
              .map(|signature| signature.into_vec());
 
@@ -153,7 +142,7 @@ impl<Scheme: Debug + Sync + Send> Signer for LibcruxKeyId<Scheme> {
     }
 
     fn scheme(&self) -> SignatureScheme {
-        match self.0.scheme() {
+        match self.sk.scheme() {
             LibcruxSignatureScheme::EcDsaP256(ecdsa::DigestAlgorithm::Sha256) => SignatureScheme::ECDSA_NISTP256_SHA256,
             LibcruxSignatureScheme::Ed25519 => SignatureScheme::ED25519,
             _ => SignatureScheme::Unknown(0)
