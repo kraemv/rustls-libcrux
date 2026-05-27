@@ -2,12 +2,9 @@ use alloc::boxed::Box;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::fmt::Debug;
-use std::string::ToString;
 
 use libcrux::protocols::hpke;
 use libcrux::protocols::hpke::libcrux as HPKEProvider;
-use hpke_rs_rust_crypto::HpkeRustCrypto;
-use hpke_rs_crypto::HpkeCrypto;
 
 use rustls::crypto::hpke::{
     EncapsulatedSecret, Hpke, HpkeOpener, HpkePrivateKey, HpkePublicKey, HpkeSealer, HpkeSuite,
@@ -67,134 +64,6 @@ pub static DHKEM_X25519_HKDF_SHA256_CHACHA20_POLY1305: &LibcruxHpkeConfig = &Lib
     kdf: hpke::hpke_types::KdfAlgorithm::HkdfSha256,
     aead: hpke::hpke_types::AeadAlgorithm::ChaCha20Poly1305,
 };
-
-#[derive(Debug)]
-pub struct HpkeRs(HpkeSuite);
-
-impl HpkeRs {
-    fn start(&self) -> Result<libcrux::protocols::hpke::Hpke<HpkeRustCrypto>, Error> {
-        Ok(hpke_rs::Hpke::new(
-            hpke_rs::Mode::Base,
-            hpke::hpke_types::KemAlgorithm::try_from(u16::from(self.0.kem)).map_err(|_| Error::General("Unknown KEM".to_string()))?,
-            hpke::hpke_types::KdfAlgorithm::try_from(u16::from(self.0.sym.kdf_id)).map_err(|_| Error::General("Unknown KDF".to_string()))?,
-            hpke::hpke_types::AeadAlgorithm::try_from(u16::from(self.0.sym.aead_id)).map_err(|_| Error::General("Unknown AEAD".to_string()))?,
-        ))
-    }
-}
-
-impl Hpke for HpkeRs {
-    fn seal(
-        &self,
-        info: &[u8],
-        aad: &[u8],
-        plaintext: &[u8],
-        pub_key: &HpkePublicKey,
-    ) -> Result<(EncapsulatedSecret, Vec<u8>), Error> {
-        let pk_r = hpke_rs::HpkePublicKey::new(pub_key.0.clone());
-        let (enc, ciphertext) = self
-            .start()?
-            .seal(&pk_r, info, aad, plaintext, None, None, None)
-            .map_err(other_err)?;
-        Ok((EncapsulatedSecret(enc.to_vec()), ciphertext))
-    }
-
-    fn setup_sealer(
-        &self,
-        info: &[u8],
-        pub_key: &HpkePublicKey,
-    ) -> Result<(EncapsulatedSecret, Box<dyn HpkeSealer + 'static>), Error> {
-        let pk_r = hpke_rs::HpkePublicKey::new(pub_key.0.clone());
-        let (enc, context) = self
-            .start()?
-            .setup_sender(&pk_r, info, None, None, None)
-            .map_err(other_err)?;
-        Ok((
-            EncapsulatedSecret(enc.to_vec()),
-            Box::new(HpkeRsSender { context }),
-        ))
-    }
-
-    fn open(
-        &self,
-        enc: &EncapsulatedSecret,
-        info: &[u8],
-        aad: &[u8],
-        ciphertext: &[u8],
-        secret_key: &HpkePrivateKey,
-    ) -> Result<Vec<u8>, Error> {
-        let sk_r = hpke_rs::HpkePrivateKey::new(secret_key.secret_bytes().to_vec());
-        self.start()?
-            .open(
-                enc.0.as_slice(),
-                &sk_r,
-                info,
-                aad,
-                ciphertext,
-                None,
-                None,
-                None,
-            )
-            .map_err(other_err)
-    }
-
-    fn setup_opener(
-        &self,
-        enc: &EncapsulatedSecret,
-        info: &[u8],
-        secret_key: &HpkePrivateKey,
-    ) -> Result<Box<dyn HpkeOpener + 'static>, Error> {
-        let sk_r = hpke_rs::HpkePrivateKey::new(secret_key.secret_bytes().to_vec());
-        Ok(Box::new(HpkeRsReceiver {
-            context: self
-                .start()?
-                .setup_receiver(enc.0.as_slice(), &sk_r, info, None, None, None)
-                .map_err(other_err)?,
-        }))
-    }
-
-    fn generate_key_pair(&self) -> Result<(HpkePublicKey, HpkePrivateKey), Error> {
-        let kem_algorithm = match self.0.kem {
-            HpkeKemId::DHKEM_P256_HKDF_SHA256 => hpke::hpke_types::KemAlgorithm::DhKemP256,
-            HpkeKemId::DHKEM_X25519_HKDF_SHA256 => hpke::hpke_types::KemAlgorithm::DhKem25519,
-            _ => {
-                // Safety: we don't expose HpkeRs static instances for unsupported algorithms.
-                unimplemented!()
-            }
-        };
-
-        let (public_key, secret_key) =
-            HpkeRustCrypto::kem_key_gen(kem_algorithm, &mut HpkeRustCrypto::prng())
-                .map_err(other_err)?;
-
-        Ok((HpkePublicKey(public_key), HpkePrivateKey::from(secret_key)))
-    }
-
-    fn suite(&self) -> HpkeSuite {
-        self.0
-    }
-}
-
-#[derive(Debug)]
-struct HpkeRsSender {
-    context: hpke_rs::Context<HpkeRustCrypto>,
-}
-
-impl HpkeSealer for HpkeRsSender {
-    fn seal(&mut self, aad: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, Error> {
-        self.context.seal(aad, plaintext).map_err(other_err)
-    }
-}
-
-#[derive(Debug)]
-struct HpkeRsReceiver {
-    context: hpke_rs::Context<HpkeRustCrypto>,
-}
-
-impl HpkeOpener for HpkeRsReceiver {
-    fn open(&mut self, aad: &[u8], ciphertext: &[u8]) -> Result<Vec<u8>, Error> {
-        self.context.open(aad, ciphertext).map_err(other_err)
-    }
-}
 
 #[derive(Debug)]
 struct LibcruxHpkeSealer {
@@ -346,10 +215,6 @@ impl Hpke for LibcruxHpkeConfig {
     }
 }
 
-fn other_err(err: impl std::fmt::Display + Send + Sync + 'static) -> Error {
-    Error::General(alloc::format!("{}", err))
-}
-
 #[cfg(test)]
 mod tests {
     use alloc::{format, vec};
@@ -385,7 +250,9 @@ mod tests {
             let ct = sealer.seal(aad, pt).unwrap();
 
             // We should be able to set up an opener.
-            let mut opener = suite.setup_opener(&enc, info, &sk).unwrap();
+            let mut opener = suite
+                .setup_opener(&enc, info, &sk)
+                .unwrap();
             _ = format!("{opener:?}"); // Opener should be Debug.
 
             // Setting up an opener with an invalid private key should fail.
@@ -414,6 +281,8 @@ mod tests {
     #[test]
     fn test_fips() {
         // None of the rust-crypto backed hpke-rs suites should be considered FIPS approved.
-        assert!(ALL_SUPPORTED_SUITES.iter().all(|suite| !suite.fips()));
+        assert!(ALL_SUPPORTED_SUITES
+            .iter()
+            .all(|suite| !suite.fips()));
     }
 }
