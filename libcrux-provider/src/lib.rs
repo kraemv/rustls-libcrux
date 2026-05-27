@@ -12,6 +12,7 @@ use rustls::pki_types::PrivateKeyDer;
 mod aead;
 mod hash;
 mod hmac;
+mod hkdf;
 #[cfg(feature = "std")]
 pub mod hpke;
 mod kx;
@@ -70,7 +71,7 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
             hash_provider: &hash::Sha256,
             confidentiality_limit: u64::MAX,
         },
-        hkdf_provider: &rustls::crypto::tls13::HkdfUsingHmac(&hmac::Sha256Hmac),
+        hkdf_provider: &hkdf::Sha256HKDF,
         aead_alg: &aead::Chacha20Poly1305,
         quic: None,
     });
