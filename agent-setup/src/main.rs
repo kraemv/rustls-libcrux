@@ -1,14 +1,13 @@
 use der::asn1::{BitStringRef, OctetString, SetOfVec, SetOfRef};
 use der::oid::Arc as OidArc;
 use der::{Any, FixedTag};
-use libcrux::agent::signatures::EcDsaP256PrivateKey;
-use libcrux::algorithms::ecdsa::{self, DigestAlgorithm};
+use libcrux::agent::signatures::{EcDsaP256PrivateKey, SHA256};
+use libcrux::algorithms::ecdsa;
 use pkcs8::{LineEnding, ObjectIdentifier, PrivateKeyInfo, spki::AlgorithmIdentifier};
 use x509_cert::attr::{Attribute};
 use rustls::pki_types::PrivateKeyDer;
 use sec1::{der::Encode, EcPrivateKey};
 use std::{fs, path::Path};
-use std::fmt::Write as fmtWrite;
 use std::env;
 
 use der::EncodePem;
@@ -61,14 +60,6 @@ fn init_agent() -> Result<(), Error> {
         .map_err(|_| Error::Agent)
 }
 
-fn encode_hex(bytes: &[u8]) -> String {
-    let mut s = String::with_capacity(bytes.len() * 2);
-    for &b in bytes {
-        write!(&mut s, "{:02x}", b).unwrap();
-    }
-    s
-}
-
 const ID_EC_PUBLICKEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
 const ECDSA_NISTP256_SHA256: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.3.1.7");
 const LOCAL_KEY_ID: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.21");
@@ -104,8 +95,7 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
                     let (id, pk) = match parameter_oid_arcs.as_slice() {
                         [1, 2, 840, 10045, 3, 1, 7] => {
                             let key = ecdsa::p256::PrivateKey::try_from(key).map_err(|_| Error::Pkcs8)?;
-                            let alg = DigestAlgorithm::Sha256;
-                            agent.ecdsa_p256_add_key(EcDsaP256PrivateKey::new(key, alg)).map_err(|_| Error::Agent)?
+                            agent.ecdsa_p256_add_key(EcDsaP256PrivateKey::<SHA256>::from(key)).map_err(|_| Error::Agent)?
                         }
                         // [1, 3, 132, 0, 34] => EcdsaSignatureScheme::ECDSA_NISTP384_SHA384,
                         // [1, 3, 132, 0, 35] => EcdsaSignatureScheme::ECDSA_NISTP521_SHA512,
@@ -121,7 +111,7 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
                         parameters: Some(Any::from(ECDSA_NISTP256_SHA256)),
                     };
                     
-                    let encoded_id = Any::new(OctetString::TAG, id.as_ref()).map_err(|_| Error::Encoding)?;
+                    let encoded_id = Any::new(OctetString::TAG, *id.as_ref()).map_err(|_| Error::Encoding)?;
                     let mut values = SetOfVec::new();
                     values.insert(encoded_id).map_err(|_| Error::Encoding)?;
                     let attr = Attribute{
@@ -150,7 +140,7 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
                     };
 
                     let encoded_sk = sk_info.to_pem(LineEnding::LF).map_err(|_| Error::Encoding)?;
-                    let hex_id = encode_hex(&id);
+                    let hex_id = hex::encode(id.as_ref());
                     Ok((encoded_sk, hex_id))
                 }
                 _ => Err(Error::Pkcs8),

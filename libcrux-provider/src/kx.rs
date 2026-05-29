@@ -1,6 +1,7 @@
 use alloc::boxed::Box;
 use alloc::string::String;
 
+use libcrux::libcrux::kem::{Kem, MlKem768};
 use rustls::crypto;
 // use crate::pq::X25519MlKem768;
 use libcrux::libcrux::kem;
@@ -10,31 +11,42 @@ use libcrux::libcrux::nike::NIKESecretKey;
 
 
 
-#[derive(Debug)]
-pub struct KemKeyExchange {
-    priv_key: kem::DecapsKeyID,
-    pub_key: kem::EncapsKeyType,
+pub struct KemKeyExchange<Scheme: Kem> 
+where  kem::DecapsKeyID<Scheme>: DecapsKey
+{
+    priv_key: kem::DecapsKeyID<Scheme>,
+    pub_key: KemPublicKey<Scheme>,
 }
 
 #[derive(Debug)]
-pub struct Nike {
-    priv_key: nike::NIKESecretKeyID,
-    pub_key: nike::NIKEPublicKeyType,
+pub struct Nike<Scheme: nike::Nike>
+where nike::NIKESecretKeyID<Scheme>: NIKESecretKey
+{
+    priv_key: nike::NIKESecretKeyID<Scheme>,
+    pub_key:NikePublicKey<Scheme>,
 }
 
-impl crypto::ActiveKeyExchange for KemKeyExchange {
+type NikePublicKey<Scheme> = <nike::NIKESecretKeyID<Scheme> as NIKESecretKey>::PublicKey;
+type KemPublicKey<Scheme> = <kem::DecapsKeyID<Scheme> as DecapsKey>::PublicKey;
+type KemCiphertext<Scheme> = <kem::DecapsKeyID<Scheme> as DecapsKey>::Ciphertext;
+
+impl<Scheme> crypto::ActiveKeyExchange for KemKeyExchange<Scheme> 
+where 
+    Scheme: Kem,
+    kem::DecapsKeyID<Scheme>: DecapsKey
+{
     fn complete(
-        self: Box<KemKeyExchange>,
+        self: Box<KemKeyExchange<Scheme>>,
         peer: &[u8],
     ) -> Result<crypto::SharedSecret, rustls::Error> {
-        let ct = kem::EncapsulatedKey::new(self.priv_key.scheme(), peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
+        let ct = KemCiphertext::try_from(peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
         let shared_secret = self.priv_key.decaps(ct).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
 
-        Ok(crypto::SharedSecret::from(&shared_secret[..]))
+        Ok(crypto::SharedSecret::from(shared_secret))
     }
 
     fn pub_key(&self) -> &[u8] {
-        self.pub_key.to_bytes()
+        self.pub_key.as_ref()
     }
 
     fn group(&self) -> rustls::NamedGroup {
@@ -44,19 +56,23 @@ impl crypto::ActiveKeyExchange for KemKeyExchange {
     }
 }
 
-impl crypto::ActiveKeyExchange for Nike {
+impl<Scheme> crypto::ActiveKeyExchange for Nike<Scheme> 
+where 
+    Scheme: nike::Nike,
+    nike::NIKESecretKeyID<Scheme>: nike::NIKESecretKey,
+{
     fn complete(
-        self: Box<Nike>,
+        self: Box<Nike<Scheme>>,
         peer: &[u8],
     ) -> Result<crypto::SharedSecret, rustls::Error> {
-        let pk = nike::NIKEPublicKeyType::new(self.priv_key.scheme(), peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
+        let pk = NikePublicKey::try_from(peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
         let shared_secret = self.priv_key.derive(pk).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
 
         Ok(crypto::SharedSecret::from(&shared_secret[..]))
     }
 
     fn pub_key(&self) -> &[u8] {
-        self.pub_key.to_bytes()
+        self.pub_key.as_ref()
     }
 
     fn group(&self) -> rustls::NamedGroup {
@@ -79,7 +95,7 @@ pub struct MLKEM768;
 
 impl crypto::SupportedKxGroup for X25519 {
     fn start(&self) -> Result<Box<dyn crypto::ActiveKeyExchange>, rustls::Error> {
-        let (priv_key, pub_key) = nike::NIKESecretKeyID::gen_x25519_key().map_err(|_| rustls::Error::General(String::from("ecdh keygen error")))?;
+        let (priv_key, pub_key) = nike::NIKESecretKeyID::<nike::X25519>::keygen().map_err(|_| rustls::Error::General(String::from("ecdh keygen error")))?;
 
         Ok(Box::new(Nike { priv_key, pub_key }))
     }
@@ -91,7 +107,7 @@ impl crypto::SupportedKxGroup for X25519 {
 
 impl crypto::SupportedKxGroup for MLKEM768 {
     fn start(&self) -> Result<Box<dyn crypto::ActiveKeyExchange>, rustls::Error> {
-        let (priv_key, pub_key) = kem::DecapsKeyID::gen_mlkem_768_key().map_err(|_| rustls::Error::General(String::from("ecdh keygen error")))?;
+        let (priv_key, pub_key) = kem::DecapsKeyID::<MlKem768>::keygen().map_err(|_| rustls::Error::General(String::from("MlKem keygen error")))?;
 
         Ok(Box::new(KemKeyExchange { priv_key, pub_key }))
     }

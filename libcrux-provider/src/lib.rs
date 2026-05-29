@@ -4,15 +4,13 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use alloc::sync::Arc;
-
 use rustls::crypto::CryptoProvider;
-use rustls::pki_types::PrivateKeyDer;
 
 mod aead;
 mod hash;
 mod hmac;
 mod hkdf;
+mod key_provider;
 #[cfg(feature = "std")]
 pub mod hpke;
 mod kx;
@@ -41,23 +39,7 @@ impl rustls::crypto::SecureRandom for Provider {
             .map_err(|_| rustls::crypto::GetRandomFailed)
     }
 }
-
-impl rustls::crypto::KeyProvider for Provider {
-    fn load_private_key(
-        &self,
-        key_der: PrivateKeyDer<'static>,
-    ) -> Result<Arc<dyn rustls::sign::SigningKey>, rustls::Error> {
-        Ok(Arc::new(sign::LibcruxKeyId::try_from(key_der).map_err(
-            |err| {
-                #[cfg(feature = "std")]
-                let err = rustls::OtherError(Arc::new(err));
-                #[cfg(not(feature = "std"))]
-                let err = rustls::Error::General(alloc::format!("{}", err));
-                err
-            },
-        )?))
-    }
-}
+        
 
 static ALL_CIPHER_SUITES: &[rustls::SupportedCipherSuite] = &[
     TLS13_CHACHA20_POLY1305_SHA256,
