@@ -4,6 +4,7 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
+use libcrux::{algorithms::sha2::SHA256_LENGTH, libcrux::hash::Sha2_256};
 use rustls::crypto::CryptoProvider;
 
 mod aead;
@@ -53,7 +54,7 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
             hash_provider: &hash::Sha256,
             confidentiality_limit: u64::MAX,
         },
-        hkdf_provider: &hkdf::Sha256HKDF,
+        hkdf_provider: &hkdf::HKDF::<SHA256_LENGTH, Sha2_256>::new(),
         aead_alg: &aead::Chacha20Poly1305,
         quic: None,
     });

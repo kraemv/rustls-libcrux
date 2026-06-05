@@ -1,7 +1,9 @@
+use std::vec::Vec;
+
 use alloc::boxed::Box;
 use alloc::string::String;
 
-use libcrux::libcrux::kem::{Kem, MlKem768};
+use libcrux::libcrux::kem::{EncapsKey, Kem, MlKem768};
 use rustls::crypto;
 // use crate::pq::X25519MlKem768;
 use libcrux::libcrux::kem;
@@ -42,7 +44,8 @@ where
         let ct = KemCiphertext::try_from(peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
         let shared_secret = self.priv_key.decaps(ct).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
 
-        Ok(crypto::SharedSecret::from(shared_secret))
+        let id_bytes = shared_secret.into();
+        Ok(crypto::SharedSecret::from(id_bytes))
     }
 
     fn pub_key(&self) -> &[u8] {
@@ -68,7 +71,7 @@ where
         let pk = NikePublicKey::try_from(peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
         let shared_secret = self.priv_key.derive(pk).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
 
-        Ok(crypto::SharedSecret::from(&shared_secret[..]))
+        Ok(crypto::SharedSecret::from(shared_secret.into()))
     }
 
     fn pub_key(&self) -> &[u8] {
@@ -110,6 +113,13 @@ impl crypto::SupportedKxGroup for MLKEM768 {
         let (priv_key, pub_key) = kem::DecapsKeyID::<MlKem768>::keygen().map_err(|_| rustls::Error::General(String::from("MlKem keygen error")))?;
 
         Ok(Box::new(KemKeyExchange { priv_key, pub_key }))
+    }
+
+    fn start_and_complete(&self, peer_pub_key: &[u8]) -> Result<crypto::CompletedKeyExchange, rustls::Error> {
+        let pk = KemPublicKey::<MlKem768>::try_from(peer_pub_key).map_err(|_| rustls::Error::General(String::from("MlKem pubkey error")))?;
+        pk.encaps().map_err(|_| rustls::Error::General(String::from("MlKem encaps error")))
+            .map(|(shk, ct)| (shk.into(), ct))
+            .map(|(shk, ct): (Vec<u8>, _)| crypto::CompletedKeyExchange { group: rustls::NamedGroup::MLKEM768, pub_key: ct.as_slice().to_vec(), secret: crypto::SharedSecret::from(shk) })
     }
 
     fn name(&self) -> rustls::NamedGroup {
