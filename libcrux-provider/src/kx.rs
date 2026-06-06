@@ -3,7 +3,7 @@ use std::vec::Vec;
 use alloc::boxed::Box;
 use alloc::string::String;
 
-use libcrux::libcrux::kem::{EncapsKey, Kem, MlKem768};
+use libcrux::libcrux::kem::{EncapsKey, MlKem768};
 use rustls::crypto;
 // use crate::pq::X25519MlKem768;
 use libcrux::libcrux::kem;
@@ -13,36 +13,30 @@ use libcrux::libcrux::nike::NIKESecretKey;
 
 
 
-pub struct KemKeyExchange<Scheme: Kem> 
-where  kem::DecapsKeyID<Scheme>: DecapsKey
-{
-    priv_key: kem::DecapsKeyID<Scheme>,
-    pub_key: KemPublicKey<Scheme>,
+pub struct KemKeyExchange<T: DecapsKey> {
+    priv_key: T,
+    pub_key: T::PublicKey,
 }
 
 #[derive(Debug)]
-pub struct Nike<Scheme: nike::Nike>
-where nike::NIKESecretKeyID<Scheme>: NIKESecretKey
+pub struct Nike<T: nike::NIKESecretKey>
 {
-    priv_key: nike::NIKESecretKeyID<Scheme>,
-    pub_key:NikePublicKey<Scheme>,
+    priv_key: T,
+    pub_key: T::PublicKey,
 }
 
-type NikePublicKey<Scheme> = <nike::NIKESecretKeyID<Scheme> as NIKESecretKey>::PublicKey;
 type KemPublicKey<Scheme> = <kem::DecapsKeyID<Scheme> as DecapsKey>::PublicKey;
-type KemCiphertext<Scheme> = <kem::DecapsKeyID<Scheme> as DecapsKey>::Ciphertext;
 
-impl<Scheme> crypto::ActiveKeyExchange for KemKeyExchange<Scheme> 
+impl<T> crypto::ActiveKeyExchange for KemKeyExchange<T> 
 where 
-    Scheme: Kem,
-    kem::DecapsKeyID<Scheme>: DecapsKey
+    T: DecapsKey
 {
     fn complete(
-        self: Box<KemKeyExchange<Scheme>>,
+        self: Box<KemKeyExchange<T>>,
         peer: &[u8],
     ) -> Result<crypto::SharedSecret, rustls::Error> {
-        let ct = KemCiphertext::try_from(peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
-        let shared_secret = self.priv_key.decaps(ct).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
+        let ct = T::Ciphertext::try_from(peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
+        let shared_secret= self.priv_key.decaps(ct).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
 
         let id_bytes = shared_secret.into();
         Ok(crypto::SharedSecret::from(id_bytes))
@@ -59,16 +53,15 @@ where
     }
 }
 
-impl<Scheme> crypto::ActiveKeyExchange for Nike<Scheme> 
+impl<T> crypto::ActiveKeyExchange for Nike<T> 
 where 
-    Scheme: nike::Nike,
-    nike::NIKESecretKeyID<Scheme>: nike::NIKESecretKey,
+    T: nike::NIKESecretKey,
 {
     fn complete(
-        self: Box<Nike<Scheme>>,
+        self: Box<Nike<T>>,
         peer: &[u8],
     ) -> Result<crypto::SharedSecret, rustls::Error> {
-        let pk = NikePublicKey::try_from(peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
+        let pk = T::PublicKey::try_from(peer).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
         let shared_secret = self.priv_key.derive(pk).map_err(|_| rustls::Error::General(String::from("ecdh derive error")))?;
 
         Ok(crypto::SharedSecret::from(shared_secret.into()))

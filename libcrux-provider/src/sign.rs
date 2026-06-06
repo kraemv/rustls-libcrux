@@ -10,45 +10,30 @@ use rustls::{SignatureAlgorithm, SignatureScheme};
 use der::Encode;
 
 use libcrux::algorithms::ecdsa;
-use libcrux::libcrux::signature::{self as libcrux_api, Sig, SigningKeyID, VerificationKey};
-use libcrux_api::SigningKey as LibcruxSigningKey;
-use libcrux_api::SignatureScheme as LibcruxSignatureScheme;
-
-#[derive(Clone, Debug, Copy)]
-pub enum EcdsaSignatureScheme {
-    /// ECDSA backed by the NIST P256 curve. Currently the only NIST curve supported by libcrux
-    #[allow(non_camel_case_types)]
-    ECDSA_NISTP256_SHA256,
-}
+use libcrux::libcrux::signature::{SigningKey as LibcruxSigningKey, SignatureScheme as LibcruxSignatureScheme};
 
 #[derive(Clone, Debug)]
-pub struct LibcruxKeyId<Scheme, Vk, const N: usize> 
-where 
-    Scheme: Sig,
-    Vk: VerificationKey
-{
-    sk: SigningKeyID<Scheme, Vk>
+pub struct TLSSigningKey<const N: usize, T: LibcruxSigningKey<N>> {
+    inner: T,
 }
 
-impl<Scheme, Vk, const N: usize> LibcruxKeyId<Scheme, Vk, N> 
+impl <const N: usize, T> TLSSigningKey<N, T>
 where 
-    Scheme: Sig,
-    Vk: VerificationKey
+    T: LibcruxSigningKey<N>,
+
 {
-    pub fn new(sk: SigningKeyID<Scheme, Vk>) -> Self {
-        Self{sk}
+    pub fn new(sk: T) -> Self {
+        Self { inner: sk }
     }
 }
 
-impl<Scheme, Vk, const N: usize> SigningKey for LibcruxKeyId<Scheme, Vk, N>
+impl <const N: usize, T> SigningKey for TLSSigningKey<N, T>
 where
-    Scheme: Sig + Debug + Sync + Send + Clone + 'static,
-    Vk: VerificationKey + Clone + 'static,
-    SigningKeyID<Scheme, Vk>: LibcruxSigningKey<N>,
+    T: LibcruxSigningKey<N> + Clone + Debug + 'static,
 {
     fn choose_scheme(&self, offered: &[SignatureScheme]) -> Option<Box<dyn Signer>> {
         if offered.contains(&self.scheme()) {
-            let key: LibcruxKeyId<Scheme, Vk, N> = self.clone();
+            let key: TLSSigningKey<N, T> = self.clone();
             Some(Box::new(key))
         } else {
             None
@@ -76,35 +61,28 @@ where
     }
 }
 
-fn signing_error(msg: &str) -> rustls::Error {
-    rustls::Error::General(msg.into())
-}
-
-impl<Scheme: Debug + Sync + Send, Vk, const N: usize> Signer for LibcruxKeyId<Scheme, Vk, N> 
-where 
-    Scheme: Sig,
-    Vk: VerificationKey,
-    SigningKeyID<Scheme, Vk>: LibcruxSigningKey<N>,
+impl <const N: usize, T> Signer for TLSSigningKey<N, T>
+where
+    T: LibcruxSigningKey<N> + Debug,
 {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
-        let signature = self.sk.sign(message)
-             .map_err(|_| signing_error("signing failed"))
-             .map(|signature| signature.into());
+        let signature = self.inner.sign(message)
+            .map_err(|_| signing_error("signing failed"));
 
-        // TODO: Find smart fix
+        // TODO: Find smart solution that avoids retyping
         match self.scheme() {
             SignatureScheme::ECDSA_NISTP256_SHA256 => {
                 signature
-                    .and_then(|signature| signature.to_vec().try_into().map_err(|_| signing_error("Signing failed")))
+                    .and_then(|signature| signature.as_ref().try_into().map_err(|_| signing_error("Signing failed")))
                     .and_then(|signature: [u8; 64]| der_encode_ecdsa_signature(&ecdsa::p256::Signature::from_bytes(signature)).map_err(|_| signing_error("Error DER-encoding ECDSA signature")))
             }
 
-            _ => signature.map(|sig| sig.to_vec()),
+            _ => signature.map(|sig| sig.as_ref().to_vec()),
         }
     }
 
     fn scheme(&self) -> SignatureScheme {
-        match self.sk.scheme() {
+        match self.inner.scheme() {
             LibcruxSignatureScheme::EcDsaP256(ecdsa::DigestAlgorithm::Sha256) => SignatureScheme::ECDSA_NISTP256_SHA256,
             LibcruxSignatureScheme::Ed25519 => SignatureScheme::ED25519,
             _ => SignatureScheme::Unknown(0)
@@ -112,13 +90,17 @@ where
     }
 }
 
+fn signing_error(msg: &str) -> rustls::Error {
+    rustls::Error::General(msg.into())
+}
+
 // copied from ecdsa crate, where it wasn't public
 /// Create an ASN.1 DER encoded signature from big endian `r` and `s` scalar
 /// components.
 fn der_encode_ecdsa_signature(sig: &ecdsa::p256::Signature) -> der::Result<Vec<u8>> {
-    let (r, s) = sig.as_bytes();
-    let r = UintRef::new(r)?;
-    let s = UintRef::new(s)?;
+    let sig = sig.as_bytes();
+    let r = UintRef::new(&sig[0..32])?;
+    let s = UintRef::new(&sig[32..])?;
 
     let mut bytes = [0u8; 73];
     let mut writer = der::SliceWriter::new(&mut bytes);

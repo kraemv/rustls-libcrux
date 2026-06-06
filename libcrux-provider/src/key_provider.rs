@@ -1,5 +1,5 @@
 use crate::Provider;
-use crate::sign::LibcruxKeyId;
+use crate::sign::TLSSigningKey;
 
 use std::vec::Vec;
 use std::sync::Arc;
@@ -9,20 +9,18 @@ use der::Any;
 use der::oid::Arc as OidArc;
 use der::asn1::{BitString, OctetString, SetOfRef};
 use libcrux::agent::signatures::{EcDsaP256PublicKey, Ed25519PublicKey, SHA256};
-use libcrux::libcrux::signature::{EcDsaP256, Ed25519, Sig, SigningKey, SigningKeyID, VerificationKey};
+use libcrux::libcrux::signature::{EcDsaP256, Ed25519, SigningKey, SigningKeyID};
 use pkcs8::{ObjectIdentifier, PrivateKeyInfo};
 use pki_types::PrivatePkcs8KeyDer;
 use rustls::pki_types::PrivateKeyDer;
 use x509_cert::attr::Attribute;
 
-impl<Scheme, Vk, const N: usize> LibcruxKeyId<Scheme, Vk, N> 
+impl<const N: usize, T> TLSSigningKey<N, T> 
 where 
-    Scheme: Sig + Debug + Sync + Send + Clone + 'static,
-    Vk: VerificationKey + Clone + 'static,
-    SigningKeyID<Scheme, Vk>: SigningKey<N>,
+    T: SigningKey<N> + Clone + Debug + 'static,
 {
     fn load_key(der: PrivatePkcs8KeyDer<'_>) -> Result<Arc<dyn rustls::sign::SigningKey>, pkcs8::Error> {
-        let sk = SigningKeyID::<Scheme, Vk>::try_from(der).map_err(|_| pkcs8::Error::KeyMalformed)?;
+        let sk = T::try_from(der).map_err(|_| pkcs8::Error::KeyMalformed)?;
         Ok(Arc::new(Self::new(sk)))
     }
 }
@@ -57,11 +55,11 @@ impl rustls::crypto::KeyProvider for Provider {
 
                         // Check it is an EcDsaP256 key
                         (parameter_oid_arcs.as_slice() == [1, 2, 840, 10045, 3, 1, 7]).then_some(()).ok_or(pkcs8::Error::KeyMalformed).map_err(to_rustls_error)?;
-
-                        LibcruxKeyId::<EcDsaP256, EcDsaP256PublicKey::<SHA256>, 64>::load_key(der)
+                        
+                        TLSSigningKey::<64, SigningKeyID::<EcDsaP256, EcDsaP256PublicKey::<SHA256>>>::load_key(der)
                     }
                     [1, 3, 101, 112] => {
-                        LibcruxKeyId::<Ed25519, Ed25519PublicKey, 64>::load_key(der)
+                        TLSSigningKey::<64, SigningKeyID::<Ed25519, Ed25519PublicKey>>::load_key(der)
                     }
                     _ => Err(pkcs8::Error::KeyMalformed),
                 }
