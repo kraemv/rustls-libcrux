@@ -61,7 +61,7 @@ where
                     .map_err(|_| InvalidSignature)?;
                 let mut sig = [0u8; 64];
                 let sig_r: [u8; 32] = der_sig.r.as_bytes().try_into().map_err(|_| InvalidSignature)?;
-                let sig_s: [u8; 32] = der_sig.r.as_bytes().try_into().map_err(|_| InvalidSignature)?;
+                let sig_s: [u8; 32] = der_sig.s.as_bytes().try_into().map_err(|_| InvalidSignature)?;
                 sig[0..32].copy_from_slice(&sig_r);
                 sig[32..].copy_from_slice(&sig_s);
                 T::Signature::try_from(&sig).map_err(|_| InvalidSignature)?

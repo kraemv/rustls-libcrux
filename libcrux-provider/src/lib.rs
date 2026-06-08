@@ -54,7 +54,7 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
             hash_provider: &hash::Sha256,
             confidentiality_limit: u64::MAX,
         },
-        hkdf_provider: &hkdf::HKDF::<_, MacKeyId<Sha2_256HMAC>>::new(Hkdf::<SHA256_LENGTH, Sha2_256, AgentLib>::new()),
+        hkdf_provider: &hkdf::Hkdf::<_, MacKeyId<Sha2_256HMAC>>::new(Hkdf::<SHA256_LENGTH, Sha2_256, AgentLib>::new()),
         aead_alg: &aead::Chacha20Poly1305,
         quic: None,
     });

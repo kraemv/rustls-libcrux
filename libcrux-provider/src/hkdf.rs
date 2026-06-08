@@ -3,74 +3,77 @@ use std::string::ToString;
 
 use alloc::boxed::Box;
 
+use libcrux::agent::hkdf::PseudorandomKey;
 use libcrux::libcrux::hkdf::{Error, HKDFKey, RandomnessExtractor, SaltedRandomnessExtractor};
 use libcrux::libcrux::hmac::AuthenticationKey;
 use rustls::crypto;
 use libcrux::algorithms::hmac as hmac;
-use libcrux::libcrux::{hkdf::Hkdf, AgentLib, hash::Hash};
 
-pub struct HKDF<Extractor: RandomnessExtractor, Authenticator: AuthenticationKey> {
+pub struct Hkdf<Extractor: RandomnessExtractor, Authenticator: AuthenticationKey> {
     extractor: Extractor,
     marker: PhantomData<Authenticator>,
 }
 
-const SHA2_256_LEN: usize = 32;
-
-impl<Extr: RandomnessExtractor, Auth: AuthenticationKey> HKDF<Extr, Auth>{
+impl<Extr: RandomnessExtractor, Auth: AuthenticationKey> Hkdf<Extr, Auth>{
     pub(crate) const fn new(hkdf: Extr) -> Self {
         Self { extractor: hkdf, marker: PhantomData }
     }    
 }
 
-type SecretSalt<const N: usize, Algo: Hash<N>> = <Hkdf<N, Algo, AgentLib> as RandomnessExtractor>::Salt;
-type SecretKey<const N: usize, Algo: Hash<N>> = <<Hkdf<N, Algo, AgentLib> as RandomnessExtractor>::SecretExtractor as SaltedRandomnessExtractor>::Key;
-
-impl<Extr, Auth> crypto::tls13::Hkdf for HKDF<Extr, Auth> 
+impl<Extr, Auth> crypto::tls13::Hkdf for Hkdf<Extr, Auth> 
 where
-    Extr: RandomnessExtractor,
+    Extr: RandomnessExtractor + 'static,
+    // Extr::SecretExtractor: SaltedRandomnessExtractor,
+    <Extr::SecretExtractor as SaltedRandomnessExtractor>::Key: for<'a> TryFrom<&'a [u8]>,
+    <Extr::PublicExtractor as SaltedRandomnessExtractor>::Key: for<'a> TryFrom<&'a [u8]>,
     Auth: AuthenticationKey + Send + Sync,
 {
     fn extract_from_zero_ikm(&self, salt: Option<&[u8]>) -> Box<dyn crypto::tls13::HkdfExpander> {
         // This derives the master secret, hence the input is always the key ID from the key establishment(secret) or both inputs are zero for zero PSK
         
-        let prk = match salt {
-            Some(s) => {
-                let salt = Extr::Salt::try_from(s).map_err(|_| Error::Internal("Invalid ID".to_string())).unwrap();        
+        match salt {
+            Some(s) if s.len() == size_of::<Extr::Salt>() => {
+                let salt = Extr::Salt::try_from(s).map_err(|_| Error::Internal("Invalid Salt".to_string())).unwrap();        
                 let prk = self.extractor.with_secret_salt(salt)
                     .extract_without_key()
                     .expect("Extraction failed");
-                Box::new(Expander{inner: Box::new(prk)})
+                Box::new(Expander{inner: prk})
             }
-            None => {
-                let prk = self.extractor.with_salt(None)
+            salt => {
+                let prk = self.extractor.with_salt(salt)
                     .extract_without_key()
                     .expect("Extraction failed");
-                Box::new(Expander{ inner: Box::new(prk)})
+                Box::new(Expander{inner: prk})
             }
-        };
-        prk
+        }
     }
 
     fn extract_from_secret(&self, salt: Option<&[u8]>, secret: &[u8]) -> Box<dyn crypto::tls13::HkdfExpander> {
         // This derives the input for a preshared key, the DH secret and for encrypted client hellos. Currently, it only supports DH secrets
-        let key = SecretKey::try_from(secret).map_err(|_| Error::Internal("Invalid ID".to_string())).unwrap();
 
         match salt {
             Some(s) if s.len() == size_of::<Extr::Salt>() => {
+                let key = <Extr::SecretExtractor as SaltedRandomnessExtractor>::Key::try_from(secret).map_err(|_| Error::Internal("Invalid ID".to_string())).unwrap();
                 let salt = Extr::Salt::try_from(s).map_err(|_| Error::Internal("Invalid ID".to_string())).unwrap();
-                let extr = self.extractor.with_secret_salt(salt);
-                let prk = extr.extract_with_key(key).map_err(|_| Error::Internal("Extraction failed".to_string())).unwrap();
-                Box::new(Expander{ inner: Box::new(prk)})
+                let prk = self.extractor.with_secret_salt(salt)
+                    .extract_with_key(key)
+                    .expect("Extraction failed");
+                Box::new(Expander{ inner: prk})
             }
             salt => {
-                let prk = self.extractor.with_salt(salt).extract_with_key(key).map_err(|_| Error::Internal("Extraction failed".to_string())).unwrap();
-                Box::new(Expander{ inner: Box::new(prk)})
+                let key = <Extr::PublicExtractor as SaltedRandomnessExtractor>::Key::try_from(secret).map_err(|_| Error::Internal("Invalid ID".to_string())).unwrap();
+                let extractor: <Extr as RandomnessExtractor>::PublicExtractor = self.extractor.with_salt(salt);
+                let prk = extractor
+                    .extract_with_key(key)
+                    .expect("Extraction failed");
+                Box::new(Expander{ inner: prk})
             }
         }
     }
 
     fn expander_for_okm(&self, okm: &crypto::tls13::OkmBlock) -> Box<dyn crypto::tls13::HkdfExpander> {
-        todo!()
+        let prk: [u8; 32] = okm.as_ref().try_into().expect("Expansion from OKM failed");
+        Box::new(Expander{inner: PseudorandomKey::new(prk)})
     }
 
     fn hmac_sign(&self, key: &crypto::tls13::OkmBlock, message: &[u8]) -> crypto::hmac::Tag {
@@ -80,7 +83,7 @@ where
 }
 
 
-struct Expander<T: HKDFKey>{inner: Box<T>}
+struct Expander<T: HKDFKey>{inner: T}
 
 impl<T> crypto::tls13::HkdfExpander for Expander<T> 
 where
