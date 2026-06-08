@@ -7,7 +7,6 @@ use libcrux::agent::hkdf::PseudorandomKey;
 use libcrux::libcrux::hkdf::{Error, HKDFKey, RandomnessExtractor, SaltedRandomnessExtractor};
 use libcrux::libcrux::hmac::AuthenticationKey;
 use rustls::crypto;
-use libcrux::algorithms::hmac as hmac;
 
 pub struct Hkdf<Extractor: RandomnessExtractor, Authenticator: AuthenticationKey> {
     extractor: Extractor,
@@ -77,8 +76,9 @@ where
     }
 
     fn hmac_sign(&self, key: &crypto::tls13::OkmBlock, message: &[u8]) -> crypto::hmac::Tag {
-        let result = hmac::hmac(hmac::Algorithm::Sha256, key.as_ref(), message, None);
-        crypto::hmac::Tag::new(&result[..])
+        let key = Auth::try_from(key.as_ref()).map_err(|_| Error::Internal("Invalid key".to_string())).unwrap();
+        let tag = key.authenticate(message).unwrap();
+        crypto::hmac::Tag::new(tag.as_ref())
     }
 }
 
@@ -90,12 +90,12 @@ where
     T: HKDFKey
 {
     fn expand_slice(&self, info: &[&[u8]], output: &mut [u8]) -> Result<(), crypto::tls13::OutputLengthError> {
-        self.inner.expand(output.len(), &info.concat()).map(|okm| output.copy_from_slice(&okm)).map_err(|_| crypto::tls13::OutputLengthError) 
+        self.inner.expand(output.len(), &info.concat()).map(|okm| output.copy_from_slice(okm.as_ref())).map_err(|_| crypto::tls13::OutputLengthError) 
     }
 
     fn expand_block(&self, info: &[&[u8]]) -> crypto::tls13::OkmBlock {
 
-        self.inner.expand(T::N, &info.concat()).map(|okm| crypto::tls13::OkmBlock::new(&okm)).expect("info too long") 
+        self.inner.expand(T::N, &info.concat()).map(|okm| crypto::tls13::OkmBlock::new(okm.as_ref())).expect("info too long") 
     }
 
     fn hash_len(&self) -> usize {
