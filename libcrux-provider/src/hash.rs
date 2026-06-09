@@ -1,50 +1,59 @@
 use alloc::boxed::Box;
-use std::sync::Mutex;
+use core::marker::PhantomData;
 
-use libcrux::algorithms::sha2::{self, Digest};
+use libcrux::libcrux::hash::{Hash, HashAlgo as DigestAlgorithm};
 use rustls::crypto::hash;
 
-pub struct Sha256;
+pub struct HashAlgo<const N: usize, T:Hash<N>>(PhantomData<T>);
 
-impl hash::Hash for Sha256 {
-    fn start(&self) -> Box<dyn hash::Context> {
-        Box::new(Sha256Context(Mutex::new(sha2::Sha256::new())))
-    }
-
-    fn hash(&self, data: &[u8]) -> hash::Output {
-        hash::Output::new(&sha2::sha256(data)[..])
-    }
-
-    fn algorithm(&self) -> hash::HashAlgorithm {
-        hash::HashAlgorithm::SHA256
-    }
-
-    fn output_len(&self) -> usize {
-        32
+impl<const N: usize, T> HashAlgo<N, T>
+where 
+    T: Hash<N> + 'static
+{
+    pub(crate) const fn new() -> Self {
+        Self(PhantomData)
     }
 }
 
-struct Sha256Context(Mutex<sha2::Sha256>);
+impl<const N: usize, T> hash::Hash for HashAlgo<N, T> 
+where 
+    T: Hash<N> + 'static
+{
+    fn start(&self) -> Box<dyn hash::Context> {
+        Box::new(HashCtx(T::init()))
+    }
 
-impl hash::Context for Sha256Context {
+    fn hash(&self, data: &[u8]) -> hash::Output {
+        let mut out = [0u8; N];
+        T::hash(&mut out, data);
+        hash::Output::new(&out)
+    }
+
+    fn algorithm(&self) -> hash::HashAlgorithm {
+        match T::scheme() {
+            DigestAlgorithm::Sha2_256 => hash::HashAlgorithm::SHA256,
+        }
+    }
+
+    fn output_len(&self) -> usize {
+        N
+    }
+}
+
+pub struct HashCtx<const N: usize, T:Hash<N>>(T);
+
+impl<const N: usize, T> hash::Context for HashCtx<N, T> 
+where 
+    T: Hash<N> + 'static
+{
     fn fork_finish(&self) -> hash::Output {
-        let mut out = [0u8; 32];
-        self.0
-            .lock()
-            .expect("couldn't take hasher lock")
-            .finish(&mut out);
+        let mut out = [0u8; N];
+        self.0.finish(&mut out);
         hash::Output::new(&out)
     }
 
     fn fork(&self) -> Box<dyn hash::Context> {
-        let hasher: sha2::Sha256 = {
-            self.0
-                .lock()
-                .expect("couldn't take hasher lock during fork_finish")
-                .clone()
-        };
-
-        Box::new(Self(Mutex::new(hasher)))
+        Box::new(HashCtx(self.0.clone()))
     }
 
     fn finish(self: Box<Self>) -> hash::Output {
@@ -52,9 +61,6 @@ impl hash::Context for Sha256Context {
     }
 
     fn update(&mut self, data: &[u8]) {
-        self.0
-            .lock()
-            .expect("couldn't take hasher lock during update")
-            .update(data);
+        self.0.update(data)
     }
 }

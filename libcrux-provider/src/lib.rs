@@ -4,7 +4,8 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use libcrux::{agent::hmac::{HmacSha256Key, Sha2_256HMAC}, algorithms::sha2::SHA256_LENGTH, libcrux::{AgentLib, hash::Sha2_256, hkdf::Hkdf, hmac::MacKeyId}};
+use libcrux::{agent::hmac::HmacSha256Key, algorithms::sha2::{Sha256, SHA256_LENGTH}, libcrux::{AgentLib, hkdf::Hkdf, hmac::MacKeyId}};
+use libcrux::algorithms::sha2;
 use rustls::crypto::CryptoProvider;
 
 mod aead;
@@ -51,10 +52,10 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
     rustls::SupportedCipherSuite::Tls13(&rustls::Tls13CipherSuite {
         common: rustls::crypto::CipherSuiteCommon {
             suite: rustls::CipherSuite::TLS13_CHACHA20_POLY1305_SHA256,
-            hash_provider: &hash::Sha256,
+            hash_provider: &hash::HashAlgo::<SHA256_LENGTH, Sha256>::new(),
             confidentiality_limit: u64::MAX,
         },
-        hkdf_provider: &hkdf::Hkdf::<_, HmacSha256Key>::new(Hkdf::<SHA256_LENGTH, Sha2_256, AgentLib>::new()),
+        hkdf_provider: &hkdf::Hkdf::<_, HmacSha256Key>::new(Hkdf::<SHA256_LENGTH, sha2::Sha256, AgentLib>::new()),
         aead_alg: &aead::Chacha20Poly1305,
         quic: None,
     });
@@ -63,7 +64,7 @@ pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherS
     rustls::SupportedCipherSuite::Tls12(&rustls::Tls12CipherSuite {
         common: rustls::crypto::CipherSuiteCommon {
             suite: rustls::CipherSuite::TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256,
-            hash_provider: &hash::Sha256,
+            hash_provider: &hash::HashAlgo::<SHA256_LENGTH, Sha256>::new(),
             confidentiality_limit: u64::MAX,
         },
         kx: rustls::crypto::KeyExchangeAlgorithm::ECDHE,
@@ -71,6 +72,6 @@ pub static TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherS
             rustls::SignatureScheme::RSA_PSS_SHA256,
             rustls::SignatureScheme::RSA_PKCS1_SHA256,
         ],
-        prf_provider: &rustls::crypto::tls12::PrfUsingHmac(&hmac::Sha256Hmac),
+        prf_provider: &rustls::crypto::tls12::PrfUsingHmac(&hmac::Hmac::<HmacSha256Key>::new()),
         aead_alg: &aead::Chacha20Poly1305,
     });
