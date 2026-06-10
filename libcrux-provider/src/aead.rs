@@ -1,3 +1,4 @@
+use core::marker::PhantomData;
 use std::vec;
 
 use alloc::boxed::Box;
@@ -12,32 +13,45 @@ use rustls::{
     ConnectionTrafficSecrets, ContentType, ProtocolVersion,
 };
 
-use libcrux::{algorithms::aes_gcm::Aead, primitives::aead};
+use libcrux::{algorithms::aes_gcm::Aead, libcrux::aead::AEADAlgorithm, primitives::aead};
 use libcrux::algorithms::chacha20poly1305;
+use libcrux::libcrux::aead::AEADKey;
 
-
+const CHACHAPOLY1305_OVERHEAD: usize = chacha20poly1305::TAG_LEN;
 
 pub enum LibcruxAeadKey {
     Chacha20Poly1305([u8; chacha20poly1305::KEY_LEN]),
 }
 
 pub struct Chacha20Poly1305;
+pub struct AeadAlgo<const KEY_LEN: usize, T: AEADKey<KEY_LEN>>(PhantomData<T>);
+pub struct Tls13Cipher<const KEY_LEN: usize, T: AEADKey<KEY_LEN>>(T, Iv);
 
-impl Tls13AeadAlgorithm for Chacha20Poly1305 {
+impl<const KEY_LEN: usize, T> AeadAlgo<KEY_LEN, T>
+where 
+    T: AEADKey<KEY_LEN>,    
+{
+    pub(crate) const fn new() -> Self {
+        Self(PhantomData)
+    }
+}
+
+impl<const KEY_LEN: usize, T> Tls13AeadAlgorithm for AeadAlgo<KEY_LEN, T> 
+where 
+    T: AEADKey<KEY_LEN> + 'static,    
+{
     fn encrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageEncrypter> {
-        let key: [u8; chacha20poly1305::KEY_LEN] = key.as_ref().try_into().unwrap();
-        let key = LibcruxAeadKey::Chacha20Poly1305(key);
+        let key = T::from(key.as_ref().try_into().unwrap());
         Box::new(Tls13Cipher(key, iv))
     }
 
     fn decrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageDecrypter> {
-        let key: [u8; chacha20poly1305::KEY_LEN] = key.as_ref().try_into().unwrap();
-        let key = LibcruxAeadKey::Chacha20Poly1305(key);
+        let key = T::from(key.as_ref().try_into().unwrap());
         Box::new(Tls13Cipher(key, iv))
     }
 
     fn key_len(&self) -> usize {
-        32
+        KEY_LEN
     }
 
     fn extract_keys(
@@ -45,7 +59,90 @@ impl Tls13AeadAlgorithm for Chacha20Poly1305 {
         key: AeadKey,
         iv: Iv,
     ) -> Result<ConnectionTrafficSecrets, UnsupportedOperationError> {
-        Ok(ConnectionTrafficSecrets::Chacha20Poly1305 { key, iv })
+        match T::SCHEME {
+            AEADAlgorithm::ChaCha20Poly1305 => Ok(ConnectionTrafficSecrets::Chacha20Poly1305 { key, iv }),
+        }
+    }
+}
+
+impl<const KEY_LEN: usize, T> MessageEncrypter for Tls13Cipher<KEY_LEN, T> 
+where 
+    T: AEADKey<KEY_LEN> + 'static
+{
+    fn encrypt(
+        &mut self,
+        m: OutboundPlainMessage,
+        seq: u64,
+    ) -> Result<OutboundOpaqueMessage, rustls::Error> {
+        let total_len = self.encrypted_payload_len(m.payload.len());
+        let mut payload = PrefixedPayload::with_capacity(total_len);
+
+        payload.extend_from_chunks(&m.payload);
+        payload.extend_from_slice(&m.typ.to_array());
+        let plaintext = payload.as_ref().to_vec();
+
+        let nonce = Nonce::new(&self.1, seq);
+        let aad = make_tls13_aad(total_len);
+        let mut ciphertext = vec![0u8; plaintext.len()];
+
+        let nonce = T::Nonce::try_from(&nonce.0).map_err(|_| rustls::Error::EncryptError)?;
+
+
+        let (ciphertext, tag) = self.0.encrypt(&mut ciphertext, nonce, &aad, &plaintext).map_err(|_| rustls::Error::EncryptError)?;
+
+        let mut payload = PrefixedPayload::with_capacity(total_len);
+        payload.extend_from_slice(ciphertext);
+        payload.extend_from_slice(tag.as_ref());
+
+        Ok(OutboundOpaqueMessage::new(
+            ContentType::ApplicationData,
+            ProtocolVersion::TLSv1_2,
+            payload,
+        ))
+    }
+
+    fn encrypted_payload_len(&self, payload_len: usize) -> usize {
+        payload_len + 1 + size_of::<T::Tag>()
+    }
+}
+
+impl<const KEY_LEN: usize, T> MessageDecrypter for Tls13Cipher<KEY_LEN, T> 
+where 
+    T: AEADKey<KEY_LEN> + 'static
+{
+    fn decrypt<'a>(
+        &mut self,
+        mut m: InboundOpaqueMessage<'a>,
+        seq: u64,
+    ) -> Result<InboundPlainMessage<'a>, rustls::Error> {
+        let payload_and_tag = &mut m.payload;
+        let total_len = payload_and_tag.len();
+        let tag_len = size_of::<T::Tag>();
+        if total_len < tag_len {
+            return Err(rustls::Error::DecryptError);
+        }
+
+        let (payload, tag) = payload_and_tag.split_at_mut(total_len - tag_len);
+
+        let nonce = Nonce::new(&self.1, seq);
+        let aad = make_tls13_aad(total_len);
+        let mut plaintext = vec![0u8; payload.len()];
+
+        let tag = T::Tag::try_from(tag)
+            .map_err(|_| rustls::Error::DecryptError)?;
+
+        let nonce = T::Nonce::try_from(&nonce.0)
+            .map_err(|_| rustls::Error::DecryptError)?;
+
+        self.0.decrypt(&mut plaintext, nonce, &aad, payload, tag)
+            .map_err(|_| rustls::Error::DecryptError)?;
+
+        m.payload
+            .truncate(m.payload.len() - tag_len);
+
+        m.payload.copy_from_slice(&plaintext);
+
+        m.into_tls13_unpadded_message()
     }
 }
 
@@ -82,100 +179,6 @@ impl Tls12AeadAlgorithm for Chacha20Poly1305 {
             key,
             iv: Iv::new(iv[..].try_into().unwrap()),
         })
-    }
-}
-
-struct Tls13Cipher(LibcruxAeadKey, Iv);
-
-impl MessageEncrypter for Tls13Cipher {
-    fn encrypt(
-        &mut self,
-        m: OutboundPlainMessage,
-        seq: u64,
-    ) -> Result<OutboundOpaqueMessage, rustls::Error> {
-        let total_len = self.encrypted_payload_len(m.payload.len());
-        let mut payload = PrefixedPayload::with_capacity(total_len);
-
-        payload.extend_from_chunks(&m.payload);
-        payload.extend_from_slice(&m.typ.to_array());
-        let plaintext = payload.as_ref().to_vec();
-
-        let nonce = Nonce::new(&self.1, seq);
-        let aad = make_tls13_aad(total_len);
-        let mut ciphertext = vec![0u8; plaintext.len()];
-
-        let key = match &self.0 {
-            LibcruxAeadKey::Chacha20Poly1305(key) => aead::KeyRef::new_for_algo(aead::Aead::ChaCha20Poly1305, key).map_err(|_| rustls::Error::EncryptError)?,
-        };
-
-        let mut tag = vec![0u8; key.algo().tag_len()];
-
-        let tag_ref = aead::TagMut::new_for_algo(*key.algo(), &mut tag)
-            .map_err(|_| rustls::Error::EncryptError)?;
-
-        let nonce = aead::NonceRef::new_for_algo(*key.algo(), &nonce.0)
-            .map_err(|_| rustls::Error::EncryptError)?;
-
-        key.encrypt(&mut ciphertext, tag_ref, nonce, &aad, &plaintext)
-            .map_err(|_| rustls::Error::EncryptError)?;
-
-        let mut payload = PrefixedPayload::with_capacity(total_len);
-        payload.extend_from_slice(&ciphertext);
-        payload.extend_from_slice(tag.as_ref());
-
-        // self.0
-        //     .encrypt_in_place(&nonce, &aad, &mut EncryptBufferAdapter(&mut payload))
-
-        Ok(OutboundOpaqueMessage::new(
-            ContentType::ApplicationData,
-            ProtocolVersion::TLSv1_2,
-            payload,
-        ))
-    }
-
-    fn encrypted_payload_len(&self, payload_len: usize) -> usize {
-        payload_len + 1 + CHACHAPOLY1305_OVERHEAD
-    }
-}
-
-impl MessageDecrypter for Tls13Cipher {
-    fn decrypt<'a>(
-        &mut self,
-        mut m: InboundOpaqueMessage<'a>,
-        seq: u64,
-    ) -> Result<InboundPlainMessage<'a>, rustls::Error> {
-        let key = match &self.0 {
-            LibcruxAeadKey::Chacha20Poly1305(key) => aead::KeyRef::new_for_algo(aead::Aead::ChaCha20Poly1305, key).map_err(|_| rustls::Error::DecryptError)?,
-        };
-
-        let payload_and_tag = &mut m.payload;
-        let total_len = payload_and_tag.len();
-        let tag_len = key.algo().tag_len();
-        if total_len < tag_len {
-            return Err(rustls::Error::DecryptError);
-        }
-
-        let (payload, tag) = payload_and_tag.split_at_mut(total_len - tag_len);
-
-        let nonce = Nonce::new(&self.1, seq);
-        let aad = make_tls13_aad(total_len);
-        let mut plaintext = vec![0u8; payload.len()];
-
-        let tag = aead::TagRef::new_for_algo(*key.algo(), tag)
-            .map_err(|_| rustls::Error::DecryptError)?;
-
-        let nonce = aead::NonceRef::new_for_algo(*key.algo(), &nonce.0)
-            .map_err(|_| rustls::Error::DecryptError)?;
-
-        key.decrypt(&mut plaintext, nonce, &aad, payload, tag)
-            .map_err(|_| rustls::Error::DecryptError)?;
-
-        m.payload
-            .truncate(m.payload.len() - tag_len);
-
-        m.payload.copy_from_slice(&plaintext);
-
-        m.into_tls13_unpadded_message()
     }
 }
 
@@ -271,5 +274,3 @@ impl MessageDecrypter for Tls12Cipher {
         Ok(m.into_plain_message())
     }
 }
-
-const CHACHAPOLY1305_OVERHEAD: usize = 16;

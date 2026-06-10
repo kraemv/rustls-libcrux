@@ -71,6 +71,7 @@ where
     }
 
     fn expander_for_okm(&self, okm: &crypto::tls13::OkmBlock) -> Box<dyn crypto::tls13::HkdfExpander> {
+        // TODO: Change for general types
         let prk: [u8; 32] = okm.as_ref().try_into().expect("Expansion from OKM failed");
         Box::new(Expander{inner: PseudorandomKey::new(prk)})
     }

@@ -4,7 +4,7 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use libcrux::{agent::hmac::HmacSha256Key, algorithms::sha2::{Sha256, SHA256_LENGTH}, libcrux::{AgentLib, hkdf::Hkdf, hmac::MacKeyId}};
+use libcrux::{agent::hmac::HmacSha256Key, algorithms::{chacha20poly1305, sha2::{SHA256_LENGTH, Sha256}}, libcrux::{AgentLib, hkdf::Hkdf, hmac::MacKeyId}};
 use libcrux::algorithms::sha2;
 use rustls::crypto::CryptoProvider;
 
@@ -56,7 +56,7 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
             confidentiality_limit: u64::MAX,
         },
         hkdf_provider: &hkdf::Hkdf::<_, HmacSha256Key>::new(Hkdf::<SHA256_LENGTH, sha2::Sha256, AgentLib>::new()),
-        aead_alg: &aead::Chacha20Poly1305,
+        aead_alg: &aead::AeadAlgo::<_, chacha20poly1305::Key>::new(),
         quic: None,
     });
 
