@@ -22,8 +22,8 @@ impl<Extr: RandomnessExtractor, Auth: AuthenticationKey> Hkdf<Extr, Auth>{
 impl<Extr, Auth> crypto::tls13::Hkdf for Hkdf<Extr, Auth> 
 where
     Extr: RandomnessExtractor + 'static,
-    // Extr::SecretExtractor: SaltedRandomnessExtractor,
     <Extr::SecretExtractor as SaltedRandomnessExtractor>::Key: for<'a> TryFrom<&'a [u8]>,
+    <Extr::SecretExtractor as SaltedRandomnessExtractor>::Prk: for<'a> TryFrom<&'a [u8]>,
     <Extr::PublicExtractor as SaltedRandomnessExtractor>::Key: for<'a> TryFrom<&'a [u8]>,
     Auth: AuthenticationKey + Send + Sync,
 {
@@ -71,9 +71,15 @@ where
     }
 
     fn expander_for_okm(&self, okm: &crypto::tls13::OkmBlock) -> Box<dyn crypto::tls13::HkdfExpander> {
-        // TODO: Change for general types
-        let prk: [u8; 32] = okm.as_ref().try_into().expect("Expansion from OKM failed");
-        Box::new(Expander{inner: PseudorandomKey::new(prk)})
+        match <Extr::SecretExtractor as SaltedRandomnessExtractor>::Prk::try_from(okm.as_ref()) {
+            Ok(prk) => {
+                Box::new(Expander{inner: prk})
+            }
+            Err(_) => {
+                let prk: [u8; 32] = okm.as_ref().try_into().expect("Expansion from OKM failed");
+                Box::new(Expander{inner: PseudorandomKey::new(prk)})
+            }
+        }
     }
 
     fn hmac_sign(&self, key: &crypto::tls13::OkmBlock, message: &[u8]) -> crypto::hmac::Tag {
@@ -91,7 +97,11 @@ where
     T: HKDFKey
 {
     fn expand_slice(&self, info: &[&[u8]], output: &mut [u8]) -> Result<(), crypto::tls13::OutputLengthError> {
-        self.inner.expand(output.len(), &info.concat()).map(|okm| output.copy_from_slice(okm.as_ref())).map_err(|_| crypto::tls13::OutputLengthError) 
+        let info = &info.concat();
+        match output.len() {
+            crypto::cipher::NONCE_LEN => self.inner.expand_declassify(crypto::cipher::NONCE_LEN, info).map(|okm| output.copy_from_slice(okm.as_ref())).map_err(|_| crypto::tls13::OutputLengthError),
+            output_len=> self.inner.expand(output_len, info).map(|okm| output.copy_from_slice(okm.as_ref())).map_err(|_| crypto::tls13::OutputLengthError)
+        }
     }
 
     fn expand_block(&self, info: &[&[u8]]) -> crypto::tls13::OkmBlock {

@@ -53,7 +53,7 @@ where
         signature: &[u8],
     ) -> Result<(), InvalidSignature> {
         let pk = T::try_from(public_key).map_err(|_| InvalidSignature)?;
-        let signature = match pk.scheme() {
+        let signature = match T::SCHEME {
             LibcruxSignatureScheme::EcDsaP256(_) => {
                 let mut decoder = der::SliceReader::new(signature).map_err(|_| InvalidSignature)?;
                 let der_sig: DerEcdsaSignature = decoder

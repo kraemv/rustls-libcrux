@@ -82,7 +82,7 @@ where
     }
 
     fn scheme(&self) -> SignatureScheme {
-        match self.inner.scheme() {
+        match T::SCHEME {
             LibcruxSignatureScheme::EcDsaP256(ecdsa::DigestAlgorithm::Sha256) => SignatureScheme::ECDSA_NISTP256_SHA256,
             LibcruxSignatureScheme::Ed25519 => SignatureScheme::ED25519,
             _ => SignatureScheme::Unknown(0)
