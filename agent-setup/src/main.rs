@@ -13,12 +13,12 @@ use std::env;
 use der::EncodePem;
 
 use libcrux::agent::agent::Agent;
-
+use libcrux::agent;
 use rustls::pki_types::pem::PemObject;
 
 #[derive(Debug)]
 enum Error {
-    Agent,
+    Agent(agent::Error),
     Encoding,
     IO,
     Pkcs8,
@@ -55,9 +55,9 @@ fn setup_path() -> Result<String, Error> {
 fn init_agent() -> Result<(), Error> {
     let agent_path = setup_path()?;
     let agent = Agent::connect_agent(agent_path)
-        .map_err(|_| Error::Agent)?;
+        .map_err(Error::Agent)?;
     agent.init_agent()
-        .map_err(|_| Error::Agent)
+        .map_err(Error::Agent)
 }
 
 const ID_EC_PUBLICKEY: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.10045.2.1");
@@ -74,7 +74,7 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
             let algo_oid_arcs: Vec<OidArc> = private_key_info.algorithm.oid.arcs().collect();
 
             let agent_path = setup_path()?;
-            let agent = Agent::connect_agent(agent_path).map_err(|_| Error::Agent)?;
+            let agent = Agent::connect_agent(agent_path).map_err(Error::Agent)?;
 
             match algo_oid_arcs.as_slice() {
                 // `id-ecPublicKey' from RFC 3279
@@ -95,7 +95,7 @@ fn import_key(value: PrivateKeyDer<'_>) -> Result<(String, String), Error> {
                     let (id, pk) = match parameter_oid_arcs.as_slice() {
                         [1, 2, 840, 10045, 3, 1, 7] => {
                             let key = ecdsa::p256::PrivateKey::try_from(key).map_err(|_| Error::Pkcs8)?;
-                            agent.ecdsa_p256_add_key(EcDsaP256PrivateKey::<SHA256>::from(key)).map_err(|_| Error::Agent)?
+                            agent.ecdsa_p256_add_key(EcDsaP256PrivateKey::<SHA256>::from(key)).map_err(Error::Agent)?
                         }
                         // [1, 3, 132, 0, 34] => EcdsaSignatureScheme::ECDSA_NISTP384_SHA384,
                         // [1, 3, 132, 0, 35] => EcdsaSignatureScheme::ECDSA_NISTP521_SHA512,

@@ -100,7 +100,7 @@ where
         let info = &info.concat();
         match output.len() {
             crypto::cipher::NONCE_LEN => self.inner.expand_declassify(crypto::cipher::NONCE_LEN, info).map(|okm| output.copy_from_slice(okm.as_ref())).map_err(|_| crypto::tls13::OutputLengthError),
-            output_len=> self.inner.expand(output_len, info).map(|okm| output.copy_from_slice(okm.as_ref())).map_err(|_| crypto::tls13::OutputLengthError)
+            output_len=> self.inner.expand(output_len, info).map(|okm| output[..okm.as_ref().len()].copy_from_slice(okm.as_ref())).map_err(|_| crypto::tls13::OutputLengthError)
         }
     }
 
