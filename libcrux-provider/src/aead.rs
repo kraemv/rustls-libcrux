@@ -24,34 +24,34 @@ pub enum LibcruxAeadKey {
 }
 
 pub struct Chacha20Poly1305;
-pub struct AeadAlgo<const KEY_LEN: usize, T: AEADKey<KEY_LEN>>(PhantomData<T>);
-pub struct Tls13Cipher<const KEY_LEN: usize, T: AEADKey<KEY_LEN>>(T, Iv);
+pub struct AeadAlgo<const KEY_SIZE: usize, T: AEADKey<KEY_SIZE>>(PhantomData<T>);
+pub struct Tls13Cipher<const KEY_SIZE: usize, T: AEADKey<KEY_SIZE>>(T, Iv);
 
-impl<const KEY_LEN: usize, T> AeadAlgo<KEY_LEN, T>
+impl<const KEY_SIZE: usize, T> AeadAlgo<KEY_SIZE, T>
 where 
-    T: AEADKey<KEY_LEN>,    
+    T: AEADKey<KEY_SIZE>,    
 {
     pub(crate) const fn new() -> Self {
         Self(PhantomData)
     }
 }
 
-impl<const KEY_LEN: usize, T> Tls13AeadAlgorithm for AeadAlgo<KEY_LEN, T> 
+impl<const KEY_SIZE: usize, T> Tls13AeadAlgorithm for AeadAlgo<KEY_SIZE, T> 
 where 
-    T: AEADKey<KEY_LEN> + 'static,    
+    T: AEADKey<KEY_SIZE> + 'static,    
 {
     fn encrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageEncrypter> {
-        let key = T::from(key.as_ref().try_into().unwrap());
+        let key = T::from(key.as_ref()[..KEY_SIZE].try_into().unwrap());
         Box::new(Tls13Cipher(key, iv))
     }
 
     fn decrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageDecrypter> {
-        let key = T::from(key.as_ref().try_into().unwrap());
+        let key = T::from(key.as_ref()[..KEY_SIZE].try_into().unwrap());
         Box::new(Tls13Cipher(key, iv))
     }
 
     fn key_len(&self) -> usize {
-        KEY_LEN
+        T::KEY_LEN
     }
 
     fn extract_keys(
@@ -65,9 +65,9 @@ where
     }
 }
 
-impl<const KEY_LEN: usize, T> MessageEncrypter for Tls13Cipher<KEY_LEN, T> 
+impl<const KEY_SIZE: usize, T> MessageEncrypter for Tls13Cipher<KEY_SIZE, T> 
 where 
-    T: AEADKey<KEY_LEN> + 'static
+    T: AEADKey<KEY_SIZE> + 'static
 {
     fn encrypt(
         &mut self,
@@ -106,9 +106,9 @@ where
     }
 }
 
-impl<const KEY_LEN: usize, T> MessageDecrypter for Tls13Cipher<KEY_LEN, T> 
+impl<const KEY_SIZE: usize, T> MessageDecrypter for Tls13Cipher<KEY_SIZE, T> 
 where 
-    T: AEADKey<KEY_LEN> + 'static
+    T: AEADKey<KEY_SIZE> + 'static
 {
     fn decrypt<'a>(
         &mut self,

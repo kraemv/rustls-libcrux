@@ -4,7 +4,7 @@ use alloc::boxed::Box;
 use alloc::string::String;
 
 use libcrux::agent::KeyID;
-use libcrux::agent::kx::X25519SecretKey;
+// use libcrux::agent::kx::X25519SecretKey;
 use libcrux::libcrux::kem::{DecapsKey, EncapsKey, KemScheme, MlKem768};
 use rustls::crypto;
 // use crate::pq::X25519MlKem768;
@@ -78,8 +78,8 @@ where
 
 pub const ALL_KX_GROUPS: &[&dyn crypto::SupportedKxGroup] = &[
     &Kem::<KeyID<MlKem768>>::new() as &dyn crypto::SupportedKxGroup,
-    // &Nike::<KeyID<X25519>>::new() as &dyn crypto::SupportedKxGroup,
-    &Nike::<X25519SecretKey>::new() as &dyn crypto::SupportedKxGroup,
+    &Nike::<KeyID<X25519>>::new() as &dyn crypto::SupportedKxGroup,
+    // &Nike::<X25519SecretKey>::new() as &dyn crypto::SupportedKxGroup,
 ];
 #[derive(Debug)]
 pub struct Nike<T: NIKESecretKey>(PhantomData<T>);

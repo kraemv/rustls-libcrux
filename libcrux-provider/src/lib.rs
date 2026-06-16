@@ -4,8 +4,12 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use libcrux::{agent::{KeyID, hmac::{HmacSha256Key, Sha2_256HMAC}}, algorithms::chacha20poly1305, libcrux::{AgentLib, Lib}};
+use libcrux::agent::KeyID;
+use libcrux::agent::hmac::{HmacSha256Key, Sha2_256HMAC};
 use libcrux::algorithms::sha2::{SHA256_LENGTH, Sha256};
+// use libcrux::algorithms::chacha20poly1305;
+// use libcrux::libcrux::Lib;
+use libcrux::libcrux::AgentLib;
 use libcrux::libcrux::aead::ChaCha20Poly1305;
 use libcrux::libcrux::hkdf::Hkdf;
 use rustls::crypto::CryptoProvider;
@@ -57,10 +61,10 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
             hash_provider: &hash::HashAlgo::<SHA256_LENGTH, Sha256>::new(),
             confidentiality_limit: u64::MAX,
         },
-        // hkdf_provider: &hkdf::Hkdf::<_, KeyID<Sha2_256HMAC>>::new(Hkdf::<SHA256_LENGTH, Sha256, AgentLib>::new()),
-        hkdf_provider: &hkdf::Hkdf::<_, HmacSha256Key>::new(Hkdf::<SHA256_LENGTH, Sha256, Lib>::new()),
-        // aead_alg: &aead::AeadAlgo::<_, KeyID<ChaCha20Poly1305>>::new(),
-        aead_alg: &aead::AeadAlgo::<_, chacha20poly1305::Key>::new(),
+        hkdf_provider: &hkdf::Hkdf::<_, KeyID<Sha2_256HMAC>>::new(Hkdf::<SHA256_LENGTH, Sha256, AgentLib>::new()),
+        // hkdf_provider: &hkdf::Hkdf::<_, HmacSha256Key>::new(Hkdf::<SHA256_LENGTH, Sha256, Lib>::new()),
+        aead_alg: &aead::AeadAlgo::<_, KeyID<ChaCha20Poly1305>>::new(),
+        // aead_alg: &aead::AeadAlgo::<_, chacha20poly1305::Key>::new(),
         quic: None,
     });
 
