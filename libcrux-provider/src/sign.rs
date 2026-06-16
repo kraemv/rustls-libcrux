@@ -13,13 +13,13 @@ use libcrux::algorithms::ecdsa;
 use libcrux::libcrux::signature::{SigningKey as LibcruxSigningKey, SignatureScheme as LibcruxSignatureScheme};
 
 #[derive(Clone, Debug)]
-pub struct TLSSigningKey<const N: usize, T: LibcruxSigningKey<N>> {
+pub struct TLSSigningKey<T: LibcruxSigningKey> {
     inner: T,
 }
 
-impl <const N: usize, T> TLSSigningKey<N, T>
+impl <T> TLSSigningKey<T>
 where 
-    T: LibcruxSigningKey<N>,
+    T: LibcruxSigningKey,
 
 {
     pub fn new(sk: T) -> Self {
@@ -27,13 +27,13 @@ where
     }
 }
 
-impl <const N: usize, T> SigningKey for TLSSigningKey<N, T>
+impl <T> SigningKey for TLSSigningKey<T>
 where
-    T: LibcruxSigningKey<N> + Clone + Debug + 'static,
+    T: LibcruxSigningKey + Clone + Debug + 'static,
 {
     fn choose_scheme(&self, offered: &[SignatureScheme]) -> Option<Box<dyn Signer>> {
         if offered.contains(&self.scheme()) {
-            let key: TLSSigningKey<N, T> = self.clone();
+            let key: TLSSigningKey<T> = self.clone();
             Some(Box::new(key))
         } else {
             None
@@ -61,9 +61,9 @@ where
     }
 }
 
-impl <const N: usize, T> Signer for TLSSigningKey<N, T>
+impl <T> Signer for TLSSigningKey<T>
 where
-    T: LibcruxSigningKey<N> + Debug,
+    T: LibcruxSigningKey + Debug,
 {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
         let signature = self.inner.sign(message)

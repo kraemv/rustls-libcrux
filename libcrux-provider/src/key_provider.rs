@@ -15,9 +15,9 @@ use pki_types::PrivatePkcs8KeyDer;
 use rustls::pki_types::PrivateKeyDer;
 use x509_cert::attr::Attribute;
 
-impl<const N: usize, T> TLSSigningKey<N, T> 
+impl<T> TLSSigningKey<T> 
 where 
-    T: SigningKey<N> + Clone + Debug + 'static,
+    T: SigningKey + Clone + Debug + 'static,
 {
     fn load_key(der: PrivatePkcs8KeyDer<'_>) -> Result<Arc<dyn rustls::sign::SigningKey>, pkcs8::Error> {
         let sk = T::try_from(der).map_err(|_| pkcs8::Error::KeyMalformed)?;
@@ -56,10 +56,10 @@ impl rustls::crypto::KeyProvider for Provider {
                         // Check it is an EcDsaP256 key
                         (parameter_oid_arcs.as_slice() == [1, 2, 840, 10045, 3, 1, 7]).then_some(()).ok_or(pkcs8::Error::KeyMalformed).map_err(to_rustls_error)?;
                         
-                        TLSSigningKey::<64, SigningKeyID::<EcDsaP256, EcDsaP256PublicKey::<SHA256>>>::load_key(der)
+                        TLSSigningKey::<SigningKeyID::<EcDsaP256, EcDsaP256PublicKey::<SHA256>>>::load_key(der)
                     }
                     [1, 3, 101, 112] => {
-                        TLSSigningKey::<64, SigningKeyID::<Ed25519, Ed25519PublicKey>>::load_key(der)
+                        TLSSigningKey::<SigningKeyID::<Ed25519, Ed25519PublicKey>>::load_key(der)
                     }
                     _ => Err(pkcs8::Error::KeyMalformed),
                 }

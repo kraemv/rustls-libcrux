@@ -88,7 +88,7 @@ where
         let nonce = T::Nonce::try_from(&nonce.0).map_err(|_| rustls::Error::EncryptError)?;
 
 
-        let (ciphertext, tag) = self.0.encrypt(&mut ciphertext, nonce, &aad, &plaintext).map_err(|_| rustls::Error::EncryptError)?;
+        let (ciphertext, tag) = self.0.encrypt_msg(&mut ciphertext, nonce, &aad, &plaintext).map_err(|_| rustls::Error::EncryptError)?;
 
         let mut payload = PrefixedPayload::with_capacity(total_len);
         payload.extend_from_slice(ciphertext);
@@ -134,7 +134,7 @@ where
         let nonce = T::Nonce::try_from(&nonce.0)
             .map_err(|_| rustls::Error::DecryptError)?;
 
-        self.0.decrypt(&mut plaintext, nonce, &aad, payload, tag)
+        self.0.decrypt_msg(&mut plaintext, nonce, &aad, payload, tag)
             .map_err(|_| rustls::Error::DecryptError)?;
 
         m.payload
