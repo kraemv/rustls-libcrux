@@ -13,7 +13,7 @@ use rustls::{
     ConnectionTrafficSecrets, ContentType, ProtocolVersion,
 };
 
-use libcrux::{algorithms::aes_gcm::Aead, libcrux::aead::AEADAlgorithm, primitives::aead};
+use libcrux::{algorithms::aes_aead::Aead, libcrux::aead::AEADAlgorithm, primitives::aead};
 use libcrux::algorithms::chacha20poly1305;
 use libcrux::libcrux::aead::AEADKey;
 

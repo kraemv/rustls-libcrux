@@ -12,7 +12,7 @@ rustls = { version = "0.23.36" }
 
 libcrux-traits = "0.0.6"
 
-hpke-rs = { version = "0.5", features = ["hazmat"]}
+hpke-rs = { version = "0.6.1", features = ["hazmat"]}
 
 der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["alloc", "oid"]}
 pkcs8 = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["pem"]}
