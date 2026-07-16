@@ -10,24 +10,25 @@ use rustls::{SignatureAlgorithm, SignatureScheme};
 use der::Encode;
 
 use libcrux::algorithms::ecdsa;
-use libcrux::libcrux::signature::{SigningKey as LibcruxSigningKey, SignatureScheme as LibcruxSignatureScheme};
+use libcrux::libcrux::signature::{
+    SignatureScheme as LibcruxSignatureScheme, SigningKey as LibcruxSigningKey,
+};
 
 #[derive(Clone, Debug)]
 pub struct TLSSigningKey<T: LibcruxSigningKey> {
     inner: T,
 }
 
-impl <T> TLSSigningKey<T>
-where 
+impl<T> TLSSigningKey<T>
+where
     T: LibcruxSigningKey,
-
 {
     pub fn new(sk: T) -> Self {
         Self { inner: sk }
     }
 }
 
-impl <T> SigningKey for TLSSigningKey<T>
+impl<T> SigningKey for TLSSigningKey<T>
 where
     T: LibcruxSigningKey + Clone + Debug + 'static,
 {
@@ -61,21 +62,29 @@ where
     }
 }
 
-impl <T> Signer for TLSSigningKey<T>
+impl<T> Signer for TLSSigningKey<T>
 where
     T: LibcruxSigningKey + Debug,
 {
     fn sign(&self, message: &[u8]) -> Result<Vec<u8>, rustls::Error> {
-        let signature = self.inner.sign(message)
+        let signature = self
+            .inner
+            .sign(message)
             .map_err(|_| signing_error("signing failed"));
 
         // TODO: Find smart solution that avoids retyping
         match self.scheme() {
-            SignatureScheme::ECDSA_NISTP256_SHA256 => {
-                signature
-                    .and_then(|signature| signature.as_ref().try_into().map_err(|_| signing_error("Signing failed")))
-                    .and_then(|signature: [u8; 64]| der_encode_ecdsa_signature(&ecdsa::p256::Signature::from_bytes(signature)).map_err(|_| signing_error("Error DER-encoding ECDSA signature")))
-            }
+            SignatureScheme::ECDSA_NISTP256_SHA256 => signature
+                .and_then(|signature| {
+                    signature
+                        .as_ref()
+                        .try_into()
+                        .map_err(|_| signing_error("Signing failed"))
+                })
+                .and_then(|signature: [u8; 64]| {
+                    der_encode_ecdsa_signature(&ecdsa::p256::Signature::from_bytes(signature))
+                        .map_err(|_| signing_error("Error DER-encoding ECDSA signature"))
+                }),
 
             _ => signature.map(|sig| sig.as_ref().to_vec()),
         }
@@ -83,9 +92,11 @@ where
 
     fn scheme(&self) -> SignatureScheme {
         match T::SCHEME {
-            LibcruxSignatureScheme::EcDsaP256(ecdsa::DigestAlgorithm::Sha256) => SignatureScheme::ECDSA_NISTP256_SHA256,
+            LibcruxSignatureScheme::EcDsaP256(ecdsa::DigestAlgorithm::Sha256) => {
+                SignatureScheme::ECDSA_NISTP256_SHA256
+            }
             LibcruxSignatureScheme::Ed25519 => SignatureScheme::ED25519,
-            _ => SignatureScheme::Unknown(0)
+            _ => SignatureScheme::Unknown(0),
         }
     }
 }

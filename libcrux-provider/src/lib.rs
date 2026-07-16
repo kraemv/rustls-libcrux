@@ -4,23 +4,23 @@ extern crate alloc;
 #[cfg(feature = "std")]
 extern crate std;
 
-use libcrux::agent::KeyID;
 use libcrux::agent::hmac::{HmacSha256Key, Sha2_256HMAC};
-use libcrux::algorithms::sha2::{SHA256_LENGTH, Sha256};
+use libcrux::agent::KeyID;
+use libcrux::algorithms::sha2::{Sha256, SHA256_LENGTH};
 // use libcrux::algorithms::chacha20poly1305;
 // use libcrux::libcrux::Lib;
-use libcrux::libcrux::AgentLib;
 use libcrux::libcrux::aead::ChaCha20Poly1305;
 use libcrux::libcrux::hkdf::Hkdf;
+use libcrux::libcrux::AgentLib;
 use rustls::crypto::CryptoProvider;
 
 mod aead;
 mod hash;
-mod hmac;
 mod hkdf;
-mod key_provider;
+mod hmac;
 #[cfg(feature = "std")]
 pub mod hpke;
+mod key_provider;
 mod kx;
 // mod pq;
 pub mod sign;
@@ -47,7 +47,6 @@ impl rustls::crypto::SecureRandom for Provider {
             .map_err(|_| rustls::crypto::GetRandomFailed)
     }
 }
-        
 
 static ALL_CIPHER_SUITES: &[rustls::SupportedCipherSuite] = &[
     TLS13_CHACHA20_POLY1305_SHA256,
@@ -61,7 +60,11 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
             hash_provider: &hash::HashAlgo::<SHA256_LENGTH, Sha256>::new(),
             confidentiality_limit: u64::MAX,
         },
-        hkdf_provider: &hkdf::Hkdf::<_, KeyID<Sha2_256HMAC>>::new(Hkdf::<SHA256_LENGTH, Sha256, AgentLib>::new()),
+        hkdf_provider: &hkdf::Hkdf::<_, KeyID<Sha2_256HMAC>>::new(Hkdf::<
+            SHA256_LENGTH,
+            Sha256,
+            AgentLib,
+        >::new()),
         // hkdf_provider: &hkdf::Hkdf::<_, HmacSha256Key>::new(Hkdf::<SHA256_LENGTH, Sha256, Lib>::new()),
         aead_alg: &aead::AeadAlgo::<_, KeyID<ChaCha20Poly1305>>::new(),
         // aead_alg: &aead::AeadAlgo::<_, chacha20poly1305::Key>::new(),

@@ -4,20 +4,20 @@ use core::marker::PhantomData;
 use libcrux::libcrux::hash::{Hash, HashAlgo as DigestAlgorithm};
 use rustls::crypto::hash;
 
-pub struct HashAlgo<const N: usize, T:Hash<N>>(PhantomData<T>);
+pub struct HashAlgo<const N: usize, T: Hash<N>>(PhantomData<T>);
 
 impl<const N: usize, T> HashAlgo<N, T>
-where 
-    T: Hash<N> + 'static
+where
+    T: Hash<N> + 'static,
 {
     pub(crate) const fn new() -> Self {
         Self(PhantomData)
     }
 }
 
-impl<const N: usize, T> hash::Hash for HashAlgo<N, T> 
-where 
-    T: Hash<N> + 'static
+impl<const N: usize, T> hash::Hash for HashAlgo<N, T>
+where
+    T: Hash<N> + 'static,
 {
     fn start(&self) -> Box<dyn hash::Context> {
         Box::new(HashCtx(T::init()))
@@ -30,7 +30,7 @@ where
     }
 
     fn algorithm(&self) -> hash::HashAlgorithm {
-        match T::scheme() {
+        match T::SCHEME {
             DigestAlgorithm::Sha2_256 => hash::HashAlgorithm::SHA256,
         }
     }
@@ -40,11 +40,11 @@ where
     }
 }
 
-pub struct HashCtx<const N: usize, T:Hash<N>>(T);
+pub struct HashCtx<const N: usize, T: Hash<N>>(T);
 
-impl<const N: usize, T> hash::Context for HashCtx<N, T> 
-where 
-    T: Hash<N> + 'static
+impl<const N: usize, T> hash::Context for HashCtx<N, T>
+where
+    T: Hash<N> + 'static,
 {
     fn fork_finish(&self) -> hash::Output {
         let mut out = [0u8; N];
@@ -53,7 +53,7 @@ where
     }
 
     fn fork(&self) -> Box<dyn hash::Context> {
-        Box::new(HashCtx(self.0.clone()))
+        Box::new(HashCtx(self.0.fork()))
     }
 
     fn finish(self: Box<Self>) -> hash::Output {
