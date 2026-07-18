@@ -47,8 +47,8 @@ where
     T: Hash<N> + 'static,
 {
     fn fork_finish(&self) -> hash::Output {
-        let mut out = [0u8; N];
-        self.0.finish(&mut out);
+        let state = self.0.fork();
+        let out = state.finalize();
         hash::Output::new(&out)
     }
 
