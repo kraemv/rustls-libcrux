@@ -5,7 +5,7 @@ resolver = "2"
 
 [workspace.dependencies]
 rustls-libcrux-provider = { path = "libcrux-provider" }
-libcrux = { git = "https://github.com/kraemv/libcrux", rev = "3f655bafd" }
+libcrux = { git = "https://github.com/kraemv/libcrux", rev = "c3f5d4a6" }
 # libcrux = { path = "/home/vincent/libcrux" }
 
 [profile.bench]

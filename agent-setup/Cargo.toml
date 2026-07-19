@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 libcrux = { workspace = true }
 
-base64ct = "1.8.3"
 hex = "0.4"
 der = { git = "https://github.com/kraemv/formats", rev = "c2da52f7", features = ["alloc", "pem"]}
 pkcs8 = { git = "https://github.com/kraemv/formats" , rev = "c2da52f7", features = ["pem"]}
