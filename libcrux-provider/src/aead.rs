@@ -14,7 +14,7 @@ use rustls::{
 };
 
 use libcrux::algorithms::chacha20poly1305;
-use libcrux::libcrux::aead::AEADKey;
+use libcrux::libcrux::aead::{AEADKey, Error};
 use libcrux::{algorithms::aes_aead::Aead, libcrux::aead::AEADAlgorithm, primitives::aead};
 
 const CHACHAPOLY1305_OVERHEAD: usize = chacha20poly1305::TAG_LEN;
@@ -24,29 +24,29 @@ pub enum LibcruxAeadKey {
 }
 
 pub struct Chacha20Poly1305;
-pub struct AeadAlgo<const KEY_SIZE: usize, T: AEADKey<KEY_SIZE>>(PhantomData<T>);
-pub struct Tls13Cipher<const KEY_SIZE: usize, T: AEADKey<KEY_SIZE>>(T, Iv);
+pub struct AeadAlgo<T: AEADKey>(PhantomData<T>);
+pub struct Tls13Cipher<T: AEADKey>(T, Iv);
 
-impl<const KEY_SIZE: usize, T> AeadAlgo<KEY_SIZE, T>
+impl<T> AeadAlgo<T>
 where
-    T: AEADKey<KEY_SIZE>,
+    T: AEADKey,
 {
     pub(crate) const fn new() -> Self {
         Self(PhantomData)
     }
 }
 
-impl<const KEY_SIZE: usize, T> Tls13AeadAlgorithm for AeadAlgo<KEY_SIZE, T>
+impl<T> Tls13AeadAlgorithm for AeadAlgo<T>
 where
-    T: AEADKey<KEY_SIZE> + 'static,
+    T: AEADKey + 'static,
 {
     fn encrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageEncrypter> {
-        let key = T::from(key.as_ref()[..KEY_SIZE].try_into().unwrap());
+        let key: T = key.as_ref()[..T::KEY_SIZE].try_into().map_err(|_| Error::Internal("Invalid bytes".into())).unwrap();
         Box::new(Tls13Cipher(key, iv))
     }
 
     fn decrypter(&self, key: AeadKey, iv: Iv) -> Box<dyn MessageDecrypter> {
-        let key = T::from(key.as_ref()[..KEY_SIZE].try_into().unwrap());
+        let key: T = key.as_ref()[..T::KEY_SIZE].try_into().map_err(|_| Error::Internal("Invalid bytes".into())).unwrap();
         Box::new(Tls13Cipher(key, iv))
     }
 
@@ -67,9 +67,9 @@ where
     }
 }
 
-impl<const KEY_SIZE: usize, T> MessageEncrypter for Tls13Cipher<KEY_SIZE, T>
+impl<T> MessageEncrypter for Tls13Cipher<T>
 where
-    T: AEADKey<KEY_SIZE> + 'static,
+    T: AEADKey + 'static,
 {
     fn encrypt(
         &mut self,
@@ -110,9 +110,9 @@ where
     }
 }
 
-impl<const KEY_SIZE: usize, T> MessageDecrypter for Tls13Cipher<KEY_SIZE, T>
+impl<T> MessageDecrypter for Tls13Cipher<T>
 where
-    T: AEADKey<KEY_SIZE> + 'static,
+    T: AEADKey + 'static,
 {
     fn decrypt<'a>(
         &mut self,

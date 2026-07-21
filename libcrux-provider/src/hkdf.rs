@@ -5,7 +5,7 @@ use alloc::boxed::Box;
 
 use libcrux::agent::hkdf::HkdfSha256PRK;
 use libcrux::libcrux::hkdf::{Error, HKDFKey, RandomnessExtractor, SaltedRandomnessExtractor};
-use libcrux::libcrux::hmac::AuthenticationKey;
+use libcrux::libcrux::mac::AuthenticationKey;
 use rustls::crypto;
 
 pub struct Hkdf<Extractor: RandomnessExtractor, Authenticator: AuthenticationKey> {

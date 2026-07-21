@@ -24,8 +24,7 @@ where
     }
 
     fn hash(&self, data: &[u8]) -> hash::Output {
-        let mut out = [0u8; N];
-        T::hash(&mut out, data);
+        let out = T::hash(data);
         hash::Output::new(&out)
     }
 
@@ -61,6 +60,6 @@ where
     }
 
     fn update(&mut self, data: &[u8]) {
-        self.0.update(data)
+        self.0.update(data);
     }
 }

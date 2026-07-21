@@ -66,7 +66,7 @@ pub static TLS13_CHACHA20_POLY1305_SHA256: rustls::SupportedCipherSuite =
             AgentLib,
         >::new()),
         // hkdf_provider: &hkdf::Hkdf::<_, HmacSha256Key>::new(Hkdf::<SHA256_LENGTH, Sha256, Lib>::new()),
-        aead_alg: &aead::AeadAlgo::<_, KeyID<ChaCha20Poly1305>>::new(),
+        aead_alg: &aead::AeadAlgo::<KeyID<ChaCha20Poly1305>>::new(),
         // aead_alg: &aead::AeadAlgo::<_, chacha20poly1305::Key>::new(),
         quic: None,
     });

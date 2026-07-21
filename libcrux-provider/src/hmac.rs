@@ -3,7 +3,7 @@ use core::marker::PhantomData;
 use std::string::ToString;
 
 use libcrux::algorithms::hmac;
-use libcrux::libcrux::hmac::{AuthenticationKey, Error};
+use libcrux::libcrux::mac::{AuthenticationKey, Error};
 use rustls::crypto;
 
 pub struct Hmac<T: AuthenticationKey>(PhantomData<T>);
