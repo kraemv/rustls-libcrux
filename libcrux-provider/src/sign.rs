@@ -70,23 +70,18 @@ where
         let signature = self
             .inner
             .sign(message)
-            .map_err(|_| signing_error("signing failed"));
+            .map_err(|_| signing_error("signing failed"))?;
 
         // TODO: Find smart solution that avoids retyping
         match self.scheme() {
-            SignatureScheme::ECDSA_NISTP256_SHA256 => signature
-                .and_then(|signature| {
-                    signature
-                        .as_ref()
-                        .try_into()
-                        .map_err(|_| signing_error("Signing failed"))
-                })
-                .and_then(|signature: [u8; 64]| {
-                    der_encode_ecdsa_signature(&ecdsa::p256::Signature::from_bytes(signature))
-                        .map_err(|_| signing_error("Error DER-encoding ECDSA signature"))
-                }),
-
-            _ => signature.map(|sig| sig.as_ref().to_vec()),
+            SignatureScheme::ECDSA_NISTP256_SHA256 => {
+                let signature = *signature.as_ref()
+                    .as_array()
+                    .ok_or( signing_error("Signing failed"))?;
+                der_encode_ecdsa_signature(&ecdsa::p256::Signature::from_bytes(signature))
+                    .map_err(|_| signing_error("Error DER-encoding ECDSA signature"))
+                },
+            _ => Ok(signature.as_ref().to_vec()),
         }
     }
 

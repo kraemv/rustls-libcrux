@@ -18,18 +18,25 @@ mod aead;
 mod hash;
 mod hkdf;
 mod hmac;
-#[cfg(feature = "std")]
-pub mod hpke;
 mod key_provider;
 mod kx;
-// mod pq;
 pub mod sign;
 mod verify;
 
 pub fn provider() -> CryptoProvider {
     CryptoProvider {
         cipher_suites: ALL_CIPHER_SUITES.to_vec(),
-        kx_groups: kx::ALL_KX_GROUPS.to_vec(),
+        kx_groups: kx::AGENT_KX_GROUPS.to_vec(),
+        signature_verification_algorithms: verify::ALGORITHMS,
+        secure_random: &Provider,
+        key_provider: &Provider,
+    }
+}
+
+pub fn lib_provider() -> CryptoProvider {
+    CryptoProvider {
+        cipher_suites: ALL_CIPHER_SUITES.to_vec(),
+        kx_groups: kx::LIB_KX_GROUPS.to_vec(),
         signature_verification_algorithms: verify::ALGORITHMS,
         secure_random: &Provider,
         key_provider: &Provider,

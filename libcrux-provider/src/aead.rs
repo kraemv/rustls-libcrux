@@ -137,7 +137,7 @@ where
         let nonce = T::Nonce::try_from(&nonce.0).map_err(|_| rustls::Error::DecryptError)?;
 
         self.0
-            .decrypt(&mut plaintext, nonce, &aad, payload, tag)
+            .decrypt(&mut plaintext, nonce, &aad, payload, &tag)
             .map_err(|_| rustls::Error::DecryptError)?;
 
         m.payload.truncate(m.payload.len() - tag_len);

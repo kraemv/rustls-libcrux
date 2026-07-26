@@ -25,26 +25,13 @@ pub static ALGORITHMS: WebPkiSupportedAlgorithms = WebPkiSupportedAlgorithms {
     ],
 };
 
-static ED25519: &dyn SignatureVerificationAlgorithm = &Verify::<Ed25519PublicKey>::new();
+static ED25519: &dyn SignatureVerificationAlgorithm = &Verify::<Ed25519PublicKey>(PhantomData);
 
 static ECDSA_P256_SHA256: &dyn SignatureVerificationAlgorithm =
-    &Verify::<EcDsaP256PublicKey<SHA256>>::new();
+    &Verify::<EcDsaP256PublicKey<SHA256>>(PhantomData);
 
 #[derive(Debug)]
-struct Verify<T: VerificationKey> {
-    marker: PhantomData<T>,
-}
-
-impl<T> Verify<T>
-where
-    T: VerificationKey,
-{
-    pub const fn new() -> Self {
-        Self {
-            marker: PhantomData,
-        }
-    }
-}
+struct Verify<T: VerificationKey> (PhantomData<T>);
 
 impl<T> SignatureVerificationAlgorithm for Verify<T>
 where
